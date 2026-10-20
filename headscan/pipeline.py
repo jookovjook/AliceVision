@@ -135,27 +135,32 @@ class P:
         if d is None: return
         sfm = self.d["sfm"] / "sfm_col.sfm"
         log = d / "cmd.log"
-        run([av("intrinsicsTransforming"), "--input", sfm, "--output", d / "sfm_pinhole.sfm", "--type", "pinhole",
+        for sub in ("images", "depth", "depthFiltered", "mesh", "meshF", "texturing"):
+            (d / sub).mkdir(exist_ok=True)  # several tools do not create their output folder
+        nviews = len(json.load(open(sfm))["views"])
+        done = lambda folder, pat: len(list((d / folder).glob(pat))) >= nviews and not self.a.force
+        if not (d / "sfm_undist.sfm").exists() or not done("images", "*.exr"):
+          run([av("intrinsicsTransforming"), "--input", sfm, "--output", d / "sfm_pinhole.sfm", "--type", "pinhole",
              "--inputTracks", "", "--outputTracks", d / "unused_tracks.json", "--verboseLevel", "info"], log)
-        run([av("exportImages"), "--input", sfm, "--target", d / "sfm_pinhole.sfm", "--output", d / "images",
+          run([av("exportImages"), "--input", sfm, "--target", d / "sfm_pinhole.sfm", "--output", d / "images",
              "--outputSfMData", d / "sfm_undist.sfm", "--namingMode", "viewid", "--outputFileType", "exr", "--verboseLevel", "info"], log)
-        run([av("depthMapEstimation"), "--input", d / "sfm_pinhole.sfm", "--imagesFolder", d / "images", "--output", d / "depth",
+        if not done("depth", "*_depthMap.exr"):
+          run([av("depthMapEstimation"), "--input", d / "sfm_pinhole.sfm", "--imagesFolder", d / "images", "--output", d / "depth",
              "--downscale", str(self.a.dm_downscale), "--maxTCams", "10", "--minViewAngle", "2", "--maxViewAngle", "70",
              "--sgmMaxTCamsPerTile", "4", "--sgmUseSfmSeeds", "1", "--sgmDepthListPerTile", "1", "--refineEnabled", "1",
              "--verboseLevel", "info"], log)
-        run([av("depthMapFiltering"), "--input", d / "sfm_pinhole.sfm", "--depthMapsFolder", d / "depth",
+        if not done("depthFiltered", "*_depthMap.exr"):
+          run([av("depthMapFiltering"), "--input", d / "sfm_pinhole.sfm", "--depthMapsFolder", d / "depth",
              "--output", d / "depthFiltered", "--nNearestCams", "10", "--minNumOfConsistentCams", "3",
              "--minNumOfConsistentCamsWithLowSimilarity", "4", "--verboseLevel", "info"], log)
         ctr, up, dist = self.head_box()
         h = self.a.bbox_half * (dist if self.a.poses == "none" else 1.0)  # metres when ARKit poses, else camera units
         bbox = ",".join(f"{v:.6f}" for v in [*ctr, 0, 0, 0, h, h, h])
         json.dump({"centre": ctr.tolist(), "up": up.tolist(), "cam_dist": dist, "half": h}, open(d / "head_box.json", "w"))
-        (d / "mesh").mkdir(exist_ok=True)
         run([av("meshing"), "--input", d / "sfm_pinhole.sfm", "--depthMapsFolder", d / "depthFiltered",
              "--outputMesh", d / "mesh" / "mesh.obj", "--output", d / "mesh" / "densePointCloud.abc",
              "--boundingBox", bbox, "--maxPoints", "5000000", "--minVis", "2", "--colorizeOutput", "1",
              "--verboseLevel", "info"], log)
-        (d / "meshF").mkdir(exist_ok=True)
         run([av("meshFiltering"), "--inputMesh", d / "mesh" / "mesh.obj", "--outputMesh", d / "meshF" / "mesh.obj",
              "--keepLargestMeshOnly", "1", "--smoothingIterations", "3", "--verboseLevel", "info"], log)
         run([av("texturing"), "--input", d / "mesh" / "densePointCloud.abc", "--imagesFolder", d / "images",
