@@ -33,6 +33,7 @@ std::string EImageDescriberType_informations()
 #endif
 #if ALICEVISION_IS_DEFINED(ALICEVISION_HAVE_APRILTAG)
            "* tag16h5: AprilTag family tag16h5.\n"
+           "* tag36h11: AprilTag family 36h11, 4 corner points per tag (marker index = id*4+corner).\n"
 #endif
 #if ALICEVISION_IS_DEFINED(ALICEVISION_HAVE_OPENCV)
     #if ALICEVISION_IS_DEFINED(ALICEVISION_HAVE_OCVSIFT)
@@ -74,6 +75,8 @@ std::string EImageDescriberType_enumToString(EImageDescriberType imageDescriberT
 #if ALICEVISION_IS_DEFINED(ALICEVISION_HAVE_APRILTAG)
         case EImageDescriberType::APRILTAG16H5:
             return "tag16h5";
+        case EImageDescriberType::APRILTAG36H11:
+            return "tag36h11";
 #endif
 
 #if ALICEVISION_IS_DEFINED(ALICEVISION_HAVE_OPENCV)
@@ -127,6 +130,8 @@ EImageDescriberType EImageDescriberType_stringToEnum(const std::string& imageDes
 #if ALICEVISION_IS_DEFINED(ALICEVISION_HAVE_APRILTAG)
     if (type == "tag16h5")
         return EImageDescriberType::APRILTAG16H5;
+    if (type == "tag36h11")
+        return EImageDescriberType::APRILTAG36H11;
 #endif
 
 #if ALICEVISION_IS_DEFINED(ALICEVISION_HAVE_OPENCV)

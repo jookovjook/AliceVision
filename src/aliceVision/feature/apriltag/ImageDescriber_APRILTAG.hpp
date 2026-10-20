@@ -20,11 +20,23 @@ namespace feature {
 
 /**
  * @brief Create an ImageDescriber interface for AprilTag feature extractor
+ *
+ * Supported families:
+ * - tag16h5 (APRILTAG16H5): 5 points per tag (center + 4 corners), marker index = id + 30 * point (ids 0..29).
+ * - tag36h11 (APRILTAG36H11): 4 points per tag (corners TL, TR, BR, BL as printed),
+ *   marker index = id * 4 + corner (ids 0..63).
  */
 class ImageDescriber_APRILTAG : public ImageDescriber
 {
   public:
-    explicit ImageDescriber_APRILTAG();
+    /**
+     * @brief Constructor
+     * @param[in] type The AprilTag family describer type (APRILTAG16H5 or APRILTAG36H11)
+     * @note For tag36h11, the detector settings can be overridden by the environment variables
+     *       ALICEVISION_APRILTAG_QUAD_DECIMATE (float), ALICEVISION_APRILTAG_MAX_HAMMING (int)
+     *       and ALICEVISION_APRILTAG_MIN_MARGIN (float).
+     */
+    explicit ImageDescriber_APRILTAG(EImageDescriberType type = EImageDescriberType::APRILTAG16H5);
 
     ~ImageDescriber_APRILTAG() override = default;
 
@@ -95,8 +107,32 @@ class ImageDescriber_APRILTAG : public ImageDescriber
     };
 
   private:
+    /**
+     * @brief Detect tag16h5 markers (5 points per tag)
+     * @param[in] image Image.
+     * @param[out] regions The detected regions (allocated as APRILTAG_Regions)
+     * @return True if detection succeeded.
+     */
+    bool describeTag16h5(const image::Image<unsigned char>& image, std::unique_ptr<Regions>& regions) const;
+
+    /**
+     * @brief Detect tag36h11 markers (4 corner points per tag)
+     * @param[in] image Image.
+     * @param[out] regions The detected regions (allocated as APRILTAG36H11_Regions)
+     * @return True if detection succeeded.
+     */
+    bool describeTag36h11(const image::Image<unsigned char>& image, std::unique_ptr<Regions>& regions) const;
+
+    /// AprilTag family describer type
+    EImageDescriberType _type;
     // AprilTag parameters
     AprilTagParameters _params;
+    /// tag36h11: detection on a decimated image (1.0 means full resolution)
+    float _quadDecimate = 1.0f;
+    /// tag36h11: maximum number of corrected bits accepted
+    int _maxHamming = 1;
+    /// tag36h11: minimum decision margin accepted
+    float _minDecisionMargin = 0.0f;
 };
 
 /**

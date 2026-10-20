@@ -1292,6 +1292,7 @@ bool computeNewCoordinateSystemFromSpecificMarkers(const sfmData::SfMData& sfmDa
                                                    Vec3& out_t)
 {
     std::vector<int> landmarksIds(markers.size(), -1);
+    std::vector<int> nbLandmarksPerMarker(markers.size(), 0);
 
     int maxLandmarkIdx = 0;
     for (const auto& landmarkIt : sfmData.getLandmarks())
@@ -1305,29 +1306,46 @@ bool computeNewCoordinateSystemFromSpecificMarkers(const sfmData::SfMData& sfmDa
             if (landmarkIt.second.getRgb().r() == markers[i].id)
             {
                 landmarksIds[i] = landmarkIt.first;
+                ++nbLandmarksPerMarker[i];
             }
         }
     }
 
-    for (int i = 0; i < landmarksIds.size(); ++i)
+    // Skip the requested markers that are not found in the scene
+    std::vector<std::size_t> foundMarkers;
+    for (std::size_t i = 0; i < landmarksIds.size(); ++i)
     {
-        int landmarkId = landmarksIds[i];
-        if (landmarkId == -1)
+        if (landmarksIds[i] == -1)
         {
-            ALICEVISION_LOG_ERROR("Failed to find marker: " << int(markers[i].id));
-            ALICEVISION_THROW_ERROR("Failed to find marker: " << int(markers[i].id));
+            ALICEVISION_LOG_WARNING("Failed to find marker: " << int(markers[i].id) << ", it is skipped.");
+            continue;
         }
+        if (nbLandmarksPerMarker[i] > 1)
+        {
+            ALICEVISION_LOG_WARNING("Marker " << int(markers[i].id) << " is associated to " << nbLandmarksPerMarker[i]
+                                              << " landmarks, the landmark " << landmarksIds[i] << " is used.");
+        }
+        foundMarkers.push_back(i);
     }
 
-    Mat ptsSrc = Mat3X(3, markers.size());
-    Mat ptsDst = Mat3X(3, markers.size());
-    for (std::size_t i = 0; i < markers.size(); ++i)
+    // If some markers are missing, at least 3 markers are needed to compute a valid transformation
+    if (foundMarkers.empty() || (foundMarkers.size() < markers.size() && foundMarkers.size() < 3))
     {
-        ptsSrc.col(i) = sfmData.getLandmarks().at(landmarksIds[i]).getX();
-        ptsDst.col(i) = markers[i].coord;
+        ALICEVISION_LOG_ERROR("Not enough markers found: " << foundMarkers.size() << " / " << markers.size()
+                                                            << " (at least 3 are needed when some markers are missing).");
+        return false;
+    }
+    ALICEVISION_LOG_INFO("Markers found: " << foundMarkers.size() << " / " << markers.size() << ".");
+
+    Mat ptsSrc = Mat3X(3, foundMarkers.size());
+    Mat ptsDst = Mat3X(3, foundMarkers.size());
+    for (std::size_t i = 0; i < foundMarkers.size(); ++i)
+    {
+        ptsSrc.col(i) = sfmData.getLandmarks().at(landmarksIds[foundMarkers[i]]).getX();
+        ptsDst.col(i) = markers[foundMarkers[i]].coord;
     }
 
-    if (markers.size() == 1)
+    if (foundMarkers.size() == 1)
     {
         out_S = 1;
         out_R = Mat3::Identity();

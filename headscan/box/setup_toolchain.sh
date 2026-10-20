@@ -32,6 +32,6 @@ python3.11 /tmp/pip.pyz install -q "pip==25.2" "numpy==1.26.4"
 command -v uv >/dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 uv venv --python 3.11 /workspace/hsvenv -q
-uv pip install --python /workspace/hsvenv/bin/python -q numpy scipy opencv-python-headless pillow matplotlib trimesh open3d pupil-apriltags pyrender "PyOpenGL==3.1.7" "networkx>=3"
+uv pip install --python /workspace/hsvenv/bin/python -q numpy scipy opencv-python-headless pillow matplotlib trimesh open3d pupil-apriltags pyrender "PyOpenGL==3.1.7" "networkx>=3" OpenEXR
 
 gcc --version | head -1; cmake --version | head -1; python3.11 --version; /workspace/hsvenv/bin/python -c "import cv2, open3d, pupil_apriltags; print('py ok', cv2.__version__, open3d.__version__)"

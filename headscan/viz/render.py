@@ -91,13 +91,42 @@ def plot_sfm(args):
     plt.tight_layout(); plt.savefig(args.out, dpi=110); print("wrote", args.out)
 
 
+def png_textures(obj_path):
+    """Copy OBJ + MTL next to themselves with EXR textures (linear, Meshroom 2023 default) converted to sRGB PNG."""
+    import re
+    from pathlib import Path
+    obj = Path(obj_path)
+    mtl_ref = re.search(r"^mtllib\s+(.+)$", obj.read_text(errors="ignore"), re.M)
+    if not mtl_ref:
+        return str(obj)
+    mtl = obj.parent / mtl_ref.group(1).strip()
+    txt = mtl.read_text()
+    if ".exr" not in txt:
+        return str(obj)
+    import OpenEXR
+    from PIL import Image
+    for exr in set(re.findall(r"(\S+\.exr)", txt)):
+        png = obj.parent / (Path(exr).stem + "_srgb.png")
+        if not png.exists():
+            with OpenEXR.File(str(obj.parent / exr)) as f:
+                lin = list(f.channels().values())[0].pixels[..., :3].astype(np.float32)
+            lin = np.clip(np.nan_to_num(lin, nan=0.0, posinf=1.0), 0, 1)
+            srgb = np.where(lin <= 0.0031308, 12.92 * lin, 1.055 * lin ** (1 / 2.4) - 0.055)
+            Image.fromarray((srgb * 255 + 0.5).astype(np.uint8)).save(png)
+        txt = txt.replace(exr, png.name)
+    mtl2 = mtl.with_name(mtl.stem + "_png.mtl"); mtl2.write_text(txt)
+    obj2 = obj.with_name(obj.stem + "_png.obj")
+    obj2.write_text(obj.read_text(errors="ignore").replace(mtl_ref.group(0), f"mtllib {mtl2.name}"))
+    return str(obj2)
+
+
 def render_mesh(args):
     import pyrender
     import trimesh
 
     d, cams, X, col = load_sfm(args.sfm)
     ctr, up, dist = head_frame(cams)
-    loaded = trimesh.load(args.mesh, process=False)
+    loaded = trimesh.load(png_textures(args.mesh), process=False)
     geoms = list(loaded.geometry.values()) if isinstance(loaded, trimesh.Scene) else [loaded]
     flip = np.diag([1.0, -1.0, -1.0])
     nf = 0
@@ -123,18 +152,18 @@ def render_mesh(args):
     fig, axs = plt.subplots(len(rows), len(azs), figsize=(2.6 * len(azs), 3.2 * len(rows)), squeeze=False)
     rd = args.view_dist * dist
     for ri, (name, ms, flat) in enumerate(rows):
-        scene = pyrender.Scene(bg_color=[255, 255, 255, 255], ambient_light=[0.35, 0.35, 0.35])
+        amb = 1.0 if flat else 0.35  # textured: unlit look (ambient only), geometry: shaded
+        scene = pyrender.Scene(bg_color=[255, 255, 255, 255], ambient_light=[amb, amb, amb])
         for m in ms:
             scene.add(pyrender.Mesh.from_trimesh(m, smooth=False))
         cam = pyrender.PerspectiveCamera(yfov=np.radians(args.fov))
         cn = scene.add(cam)
-        ln = scene.add(pyrender.DirectionalLight(intensity=3.0))
+        ln = scene.add(pyrender.DirectionalLight(intensity=0.0 if flat else 3.0))
         for ai, a in enumerate(azs):
             eye = ctr + rd * (np.cos(a) * e1 + np.sin(a) * e2) * np.cos(np.radians(10)) + rd * np.sin(np.radians(10)) * up
             T = look_at(eye, ctr, up)
             scene.set_pose(cn, T); scene.set_pose(ln, T)
-            flags = pyrender.RenderFlags.FLAT if flat else pyrender.RenderFlags.NONE
-            c, _ = r.render(scene, flags=flags)
+            c, _ = r.render(scene)
             axs[ri, ai].imshow(c); axs[ri, ai].set_axis_off()
             axs[ri, ai].set_title(f"{name} {np.degrees(a):.0f} deg", fontsize=8)
     fig.suptitle(f"{args.title}   {nf} faces" + (f" within {args.crop:g} x camera distance of the head centre" if args.crop else ""))

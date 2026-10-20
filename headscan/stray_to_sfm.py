@@ -11,6 +11,9 @@ Intrinsics: fx, fy, cx, cy per frame in rgb pixels (1920x1440). principalPoint i
 centre, focal in mm on a virtual 36 mm sensor. Distortion 'lut': radialk3 fitted to Apple's lensDistortionLookupTable
 (distorted = centre + (1 + m(r_u)) (p_u - centre), r_u = undistorted radius in reference pixels); AliceVision's
 radialk3 is centred on the principal point, Apple's on the lens distortion centre (we report the error of that).
+Measured on capture 6ba4b7d84f (ARKit poses + intrinsics locked, 248 keyframes): median reprojection residual
+1.47 px with 'lut-inv', 1.53 px with no distortion, 1.80 px with 'lut' as documented; RGB-only self-calibration agrees
+with 'lut-inv' (pincushion, ~+1.5 % at the frame edge). So the recorded frames follow the INVERSE table: default lut-inv.
 viewId = poseId = frameId = frame index (same as cameraInit --viewIdMethod filename on <frame>.jpg).
 """
 import argparse
@@ -28,13 +31,13 @@ def read_csv(p):
     return [{k.strip(): v.strip() for k, v in r.items()} for r in csv.DictReader(open(p))]
 
 
-def fit_lut_radialk3(cap, f_px, cx, cy):
+def fit_lut_radialk3(cap, f_px, cx, cy, table="distortion"):
     """Fit k1..k3 (normalised by focal, centred on the principal point) to the Apple LUT; returns k, rms/max px error."""
     cal = read_csv(cap / "calibration.csv")[0]
     rw, rh = float(cal["reference_width"]), float(cal["reference_height"])
     s = W / rw
     dcx, dcy = float(cal["distortion_center_x"]) * s, float(cal["distortion_center_y"]) * s
-    lut = np.fromfile(cap / "distortion" / "000000.bin", dtype="<f4").astype(float)
+    lut = np.fromfile(cap / table / "000000.bin", dtype="<f4").astype(float)
     rmax = max(np.hypot(x - dcx, y - dcy) for x in (0, W) for y in (0, H))  # in video px (LUT spans to the far corner)
     r_lut = np.linspace(0, rmax, len(lut))
 
@@ -81,7 +84,8 @@ def main():
     ap.add_argument("capture"); ap.add_argument("frames"); ap.add_argument("out")
     ap.add_argument("--poses", action="store_true"); ap.add_argument("--lock-poses", action="store_true")
     ap.add_argument("--intrinsics", choices=["shared", "perframe"], default="shared")
-    ap.add_argument("--distortion", choices=["none", "lut"], default="lut")
+    ap.add_argument("--distortion", choices=["none", "lut", "lut-inv"], default="lut-inv",
+                    help="lut: Apple forward table as documented (undistorted -> recorded); lut-inv: the inverse table used the same way (tests the opposite direction)")
     ap.add_argument("--lock-intrinsics", action="store_true")
     ap.add_argument("--version", default="1.2.14")
     a = ap.parse_args()
@@ -91,8 +95,9 @@ def main():
     sel = [odo[p.stem] for p in imgs]
     med = {k: float(np.median([float(r[k]) for r in sel])) for k in ("fx", "fy", "cx", "cy")}
     dist = None
-    if a.distortion == "lut":
-        k, rms, mx, disp, dc = fit_lut_radialk3(cap, med["fy"], med["cx"], med["cy"])
+    if a.distortion in ("lut", "lut-inv"):
+        k, rms, mx, disp, dc = fit_lut_radialk3(cap, med["fy"], med["cx"], med["cy"],
+                                                "distortion" if a.distortion == "lut" else "inverse_distortion")
         dist = list(k)
         print(f"LUT -> radialk3 k = {np.round(k, 6).tolist()}  fit rms {rms:.3f} px, max {mx:.3f} px "
               f"(distortion up to {disp:.1f} px; Apple centre {dc[0]:.1f},{dc[1]:.1f} vs principal point {med['cx']:.1f},{med['cy']:.1f})")

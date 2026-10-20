@@ -241,7 +241,10 @@ std::unique_ptr<ImageDescriber> createImageDescriber(EImageDescriberType imageDe
 
 #if ALICEVISION_IS_DEFINED(ALICEVISION_HAVE_APRILTAG)
         case EImageDescriberType::APRILTAG16H5:
-            describerPtr.reset(new ImageDescriber_APRILTAG());
+            describerPtr.reset(new ImageDescriber_APRILTAG(EImageDescriberType::APRILTAG16H5));
+            break;
+        case EImageDescriberType::APRILTAG36H11:
+            describerPtr.reset(new ImageDescriber_APRILTAG(EImageDescriberType::APRILTAG36H11));
             break;
 #endif  // ALICEVISION_HAVE_APRILTAG
 

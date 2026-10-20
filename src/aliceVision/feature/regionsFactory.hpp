@@ -20,6 +20,8 @@ using SIFT_Float_Regions = ScalarRegions<float, 128>;
 using CCTAG_Regions = ScalarRegions<unsigned char, 128>;
 /// Define the AprilTag tag16h5 family Keypoint (30 instance with 5 points each)
 using APRILTAG_Regions = ScalarRegions<unsigned char, 150>;
+/// Define the AprilTag tag36h11 family Keypoint (4 corner points per tag, one-hot index = id * 4 + corner, ids 0..63)
+using APRILTAG36H11_Regions = ScalarRegions<unsigned char, 256>;
 /// Define the AKAZE Keypoint (with a float descriptor)
 using AKAZE_Float_Regions = ScalarRegions<float, 64>;
 /// Define the AKAZE Keypoint (with a LIOP descriptor)

@@ -46,6 +46,8 @@ std::string describerTypeColor(feature::EImageDescriberType descType)
 #if ALICEVISION_IS_DEFINED(ALICEVISION_HAVE_APRILTAG)
         case feature::EImageDescriberType::APRILTAG16H5:
             return "blue";
+        case feature::EImageDescriberType::APRILTAG36H11:
+            return "blue";
 #endif
 
 #if ALICEVISION_IS_DEFINED(ALICEVISION_HAVE_OPENCV)

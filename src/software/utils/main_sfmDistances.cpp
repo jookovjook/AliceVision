@@ -87,10 +87,14 @@ void extractLandmarksPositions(std::vector<std::pair<std::string, Vec3>>& output
                                const std::vector<std::string>& search,
                                const std::vector<feature::EImageDescriberType>& landmarksDescriberTypes)
 {
+    // marker describer types: landmarks are identified by their marker id (stored in rgb.r) instead of the landmark id
     const std::set<feature::EImageDescriberType> isCCTag = {
 #if ALICEVISION_IS_DEFINED(ALICEVISION_HAVE_CCTAG)
         feature::EImageDescriberType::CCTAG3,
-        feature::EImageDescriberType::CCTAG4
+        feature::EImageDescriberType::CCTAG4,
+#endif
+#if ALICEVISION_IS_DEFINED(ALICEVISION_HAVE_APRILTAG)
+        feature::EImageDescriberType::APRILTAG36H11,
 #endif
     };
     const std::set<feature::EImageDescriberType> descTypes(landmarksDescriberTypes.begin(), landmarksDescriberTypes.end());

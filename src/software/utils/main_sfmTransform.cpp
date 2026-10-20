@@ -8,6 +8,7 @@
 #include <aliceVision/sfmDataIO/sfmDataIO.hpp>
 #include <aliceVision/sfm/utils/alignment.hpp>
 #include <aliceVision/sfm/utils/preprocess.hpp>
+#include <aliceVision/sfm/pipeline/ReconstructionEngine.hpp>
 #include <aliceVision/system/Logger.hpp>
 #include <aliceVision/cmdline/cmdline.hpp>
 #include <aliceVision/system/main.hpp>
@@ -21,6 +22,7 @@
 #include <boost/program_options.hpp>
 #include <boost/json.hpp>
 
+#include <algorithm>
 #include <iomanip>
 #include <string>
 #include <sstream>
@@ -35,7 +37,7 @@
 // These constants define the current software version.
 // They must be updated when the command line is changed.
 #define ALICEVISION_SOFTWARE_VERSION_MAJOR 3
-#define ALICEVISION_SOFTWARE_VERSION_MINOR 2
+#define ALICEVISION_SOFTWARE_VERSION_MINOR 3
 
 using namespace aliceVision;
 
@@ -513,6 +515,7 @@ int aliceVision_main(int argc, char** argv)
     bool applyRotation = true;
     bool applyTranslation = true;
     std::vector<sfm::MarkerWithCoord> markers;
+    std::vector<std::string> featuresFolders;
     std::string outputViewsAndPosesFilepath;
 
     std::string manualTransform;
@@ -563,6 +566,9 @@ int aliceVision_main(int argc, char** argv)
          "Apply translation transformation.")
         ("markers", po::value<std::vector<sfm::MarkerWithCoord>>(&markers)->multitoken(),
          "Markers ID and target coordinates 'ID:x,y,z'.")
+        ("featuresFolders,f", po::value<std::vector<std::string>>(&featuresFolders)->multitoken(),
+         "Path to folder(s) containing the extracted features.\n"
+         "Optional for 'from_markers' method: used to retrieve the marker ids of the landmarks from the marker descriptors.")
         ("lineUp", po::value<std::string>(&lineUpFilename)->default_value(lineUpFilename),
          "LineUp file used as information.")
         ("tracksFile", po::value<std::string>(&tracksFilename)->default_value(tracksFilename),
@@ -703,6 +709,7 @@ int aliceVision_main(int argc, char** argv)
 #endif
 #if ALICEVISION_IS_DEFINED(ALICEVISION_HAVE_APRILTAG)
                 feature::EImageDescriberType::APRILTAG16H5,
+                feature::EImageDescriberType::APRILTAG36H11,
 #endif
             };
             std::set<feature::EImageDescriberType> usedDescTypes = sfmData.getLandmarkDescTypes();
@@ -711,6 +718,7 @@ int aliceVision_main(int argc, char** argv)
             std::set_intersection(
               usedDescTypes.begin(), usedDescTypes.end(), markersDescTypes.begin(), markersDescTypes.end(), std::back_inserter(usedMarkersDescTypes));
             std::vector<feature::EImageDescriberType> inDescTypes = feature::EImageDescriberType_stringToEnums(landmarksDescriberTypesName);
+            std::sort(inDescTypes.begin(), inDescTypes.end());  // std::set_intersection requires sorted ranges
 
             std::vector<feature::EImageDescriberType> vDescTypes;
             std::set_intersection(
@@ -724,6 +732,14 @@ int aliceVision_main(int argc, char** argv)
                 }
                 return EXIT_FAILURE;
             }
+
+            if (!featuresFolders.empty())
+            {
+                // Retrieve the marker ids (stored in the landmarks color) from the marker descriptors
+                ALICEVISION_LOG_INFO("Retrieve marker ids from the features folders.");
+                sfm::retrieveMarkersId(sfmData, featuresFolders);
+            }
+
             const bool success = sfm::computeNewCoordinateSystemFromSpecificMarkers(sfmData, vDescTypes.front(), markers, applyScale, S, R, t);
             if (!success)
             {

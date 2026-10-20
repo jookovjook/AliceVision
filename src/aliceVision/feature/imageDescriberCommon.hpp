@@ -46,7 +46,8 @@ enum class EImageDescriberType : unsigned char
 
 #if ALICEVISION_IS_DEFINED(ALICEVISION_HAVE_APRILTAG)
     ,
-    APRILTAG16H5 = 50
+    APRILTAG16H5 = 50,
+    APRILTAG36H11 = 51
 #endif
     ,
     ROMA = 100
@@ -88,7 +89,7 @@ inline bool isMarker([[maybe_unused]] EImageDescriberType imageDescriberType)
     }
 #endif
 #if ALICEVISION_IS_DEFINED(ALICEVISION_HAVE_APRILTAG)
-    if (imageDescriberType == EImageDescriberType::APRILTAG16H5)
+    if (imageDescriberType == EImageDescriberType::APRILTAG16H5 || imageDescriberType == EImageDescriberType::APRILTAG36H11)
     {
         return true;
     }
@@ -122,6 +123,7 @@ inline float getStrongSupportCoeff(EImageDescriberType imageDescriberType)
 
 #if ALICEVISION_IS_DEFINED(ALICEVISION_HAVE_APRILTAG)
         case EImageDescriberType::APRILTAG16H5:
+        case EImageDescriberType::APRILTAG36H11:
             return 1.0f;
 #endif
 

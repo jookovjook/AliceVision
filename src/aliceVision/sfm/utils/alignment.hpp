@@ -339,6 +339,9 @@ std::ostream& operator<<(std::ostream& os, const MarkerWithCoord& marker);
 
 /**
  * @brief Compute a new coordinate system so that markers are aligned with the target coordinates.
+ * @note Markers are identified by the landmark color red channel (see retrieveMarkersId).
+ *       Requested markers that are not found are skipped with a warning; in that case,
+ *       at least 3 markers must remain to compute the transformation.
  *
  * @param[in] sfmData
  * @param[in] imageDescriberType

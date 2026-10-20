@@ -12,11 +12,17 @@
 
 #include <string>
 #include <random>
+#include <vector>
 
 namespace aliceVision {
 namespace sfm {
 
-void retrieveMarkersId(sfmData::SfMData& sfmData);
+/**
+ * @brief Retrieve the marker ids of the marker landmarks from the marker descriptors and store them in the landmark color red channel.
+ * @param[in,out] sfmData The scene
+ * @param[in] extraFeaturesFolders Additional features folders, searched after the scene features folders
+ */
+void retrieveMarkersId(sfmData::SfMData& sfmData, const std::vector<std::string>& extraFeaturesFolders = {});
 
 /**
  * @brief Basic Reconstruction Engine.

@@ -7,6 +7,7 @@
 #include <aliceVision/sfmData/SfMData.hpp>
 #include <aliceVision/sfmDataIO/sfmDataIO.hpp>
 #include <aliceVision/sfm/utils/alignment.hpp>
+#include <aliceVision/sfm/pipeline/ReconstructionEngine.hpp>
 #include <aliceVision/matching/MatchesCollections.hpp>
 #include <aliceVision/matching/io.hpp>
 #include <aliceVision/system/Logger.hpp>
@@ -18,11 +19,12 @@
 #include <string>
 #include <sstream>
 #include <random>
+#include <vector>
 
 // These constants define the current software version.
 // They must be updated when the command line is changed.
 #define ALICEVISION_SOFTWARE_VERSION_MAJOR 2
-#define ALICEVISION_SOFTWARE_VERSION_MINOR 1
+#define ALICEVISION_SOFTWARE_VERSION_MINOR 2
 
 using namespace aliceVision;
 using namespace aliceVision::sfm;
@@ -128,6 +130,7 @@ int aliceVision_main(int argc, char** argv)
     std::string fileMatchingPattern;
     std::vector<std::string> metadataMatchingList = {"Make", "Model", "Exif:BodySerialNumber", "Exif:LensSerialNumber"};
     std::vector<std::string> matchesFolders;
+    std::vector<std::string> featuresFolders;
     std::string describerTypesName = feature::EImageDescriberType_enumToString(feature::EImageDescriberType::SIFT);
     std::string outputViewsAndPosesFilepath;
 
@@ -159,6 +162,10 @@ int aliceVision_main(int argc, char** argv)
          "List of metadata that should match to create the correspondences.\n")
         ("matchesFolders,m", po::value<std::vector<std::string>>(&matchesFolders)->multitoken(),
          "Path to folder(s) in which computed matches are stored. Used by the from_featureMatches method.\n")
+        ("featuresFolders,f", po::value<std::vector<std::string>>(&featuresFolders)->multitoken(),
+         "Path to folder(s) containing the extracted features of the input scene.\n"
+         "Optional for the from_markers method: used to retrieve the marker ids of the input scene landmarks from the marker descriptors.\n"
+         "The reference scene is used as is: its marker landmarks must already store the marker id in the color red channel.\n")
         ("describerTypes,d", po::value<std::string>(&describerTypesName)->default_value(describerTypesName),
          feature::EImageDescriberType_informations().c_str())
         ("applyScale", po::value<bool>(&applyScale)->default_value(applyScale),
@@ -235,6 +242,12 @@ int aliceVision_main(int argc, char** argv)
         }
         case EAlignmentMethod::FROM_MARKERS:
         {
+            if (!featuresFolders.empty())
+            {
+                // Retrieve the marker ids (stored in the landmarks color) of the input scene from the marker descriptors
+                ALICEVISION_LOG_INFO("Retrieve marker ids of the input scene from the features folders.");
+                sfm::retrieveMarkersId(sfmData, featuresFolders);
+            }
             hasValidSimilarity = sfm::computeSimilarityFromCommonMarkers(sfmData, sfmDataInRef, randomNumberGenerator, &S, &R, &t);
             break;
         }
