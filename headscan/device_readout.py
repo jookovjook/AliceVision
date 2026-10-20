@@ -84,8 +84,11 @@ def main():
                 # local plane through the ring points; where the axis crosses it
                 Pr = skin[ring]; c0 = Pr.mean(0); nrm = np.linalg.svd(Pr - c0)[2][2]
                 r["ring_points"] = int(ring.sum())
-                r["skin_ring_mm_from_origin"] = float((c0 - o) @ nrm / (dn @ nrm))
                 r["skin_ring_spread_mm"] = float(np.std((Pr - c0) @ nrm))
+                r["skin_ring_cos"] = float(abs(dn @ nrm))
+                # valid only if the local surface faces the axis (not a wall parallel to it) and is not too rough
+                if abs(dn @ nrm) > 0.5 and r["skin_ring_spread_mm"] < 6.0:
+                    r["skin_ring_mm_from_origin"] = float((c0 - o) @ nrm / (dn @ nrm))
         # screw pose from its tags
         tags = L["screws"][str(k)]["tags"]
         P, Q, used = [], [], []

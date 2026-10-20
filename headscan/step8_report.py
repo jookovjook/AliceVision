@@ -1,6 +1,6 @@
 """Step 8 report: the 13 device readouts (sag1-8, cor1-4, ear_halfwidth) from the tags + head alignment.
 
-    python step8_report.py READOUT.json EAR.json FACE_LM.json OUT_PREFIX
+    python step8_report.py READOUT.json FACE_LM.json OUT_PREFIX [--screw-check CHECK.json] [--title T]
 
 Conventions (tfus-simulation CAD, see the step-8 notes in headscan/README or the commit message):
 - hole k: origin o_k sits 4 mm inside the frame's INNER face, dirn d_k into the head; inner face point I_k = o_k - 4 d_k.
@@ -8,12 +8,13 @@ Conventions (tfus-simulation CAD, see the step-8 notes in headscan/README or the
 - fine reading: wing angle psi of the screw +x (outward normal of tag 20+2k's face) about d_k from the hole-thread
   reference e1_k (table below, trimesh align_vectors frame of the CAD cutter) -> s = 2.5 psi/360 (mod 2.5);
   the coarse s from the tag positions picks the turn. +-0.34 mm thread play.
-- ear_halfwidth = 0.5 (|x_R| + |x_L|) of the ear-ball apexes (knob z = 123.5 mm on the knob axis).
+- ear_halfwidth = 0.5 (|x_R| + |x_L|) of the innermost point of the PRINTED ear ball: the sound bore removes the
+  nominal apex (ear-screw z 116 = knob z 123.5); the innermost ring is at ear-screw z 114.57 = knob z 122.07.
 - simulated values: frame_rigid_geom.seat_head on Jack's MRI (L116, v1 skin), run read-only by the conventions
   reader: sag [19.0, 21.5, 24.4, 21.5, 20.3, 26.6, 31.5, 37.8], cor [17.0, 18.2, 20.1, 19.1], E 76.3, pitch +0.32 deg.
 """
+import argparse
 import json
-import sys
 
 import matplotlib
 
@@ -27,11 +28,29 @@ E1 = {0: [0.35659, 0.333148, -0.872844], 1: [0.680605, 0.498646, -0.536778], 2: 
       9: [0.772984, 0, -0.634426], 10: [0.772984, 0, 0.634426], 11: [0.376284, 0, 0.926504]}
 SIM = [19.0, 21.5, 24.4, 21.5, 20.3, 26.6, 31.5, 37.8, 17.0, 18.2, 20.1, 19.1]
 SIM_E, P = 76.3, 2.5
+RING_Z, APEX_Z = 122.07, 123.5   # knob frame: printed ball's innermost ring, nominal apex
 NAMES = [f"sag{i + 1}" for i in range(8)] + [f"cor{i + 1}" for i in range(4)]
 
 
+def ear_from_knobs(knobs):
+    out = {}
+    for kn, side in (("0", +1), ("1", -1)):
+        k = knobs[kn]; t = np.array(k["origin_mm"]); z = np.array(k["z_axis"])
+        ring, apex = t + RING_Z * z, t + APEX_Z * z
+        out[kn] = {"side": "right" if side > 0 else "left", "ball_ring_mm": ring.round(2).tolist(), "E_side_mm": float(side * ring[0]),
+                   "E_side_nominal_apex_mm": float(side * apex[0]), "axis_vs_device_x_deg": k["axis_vs_device_x_deg"]}
+    return {"knobs": out, "ear_halfwidth_mm": 0.5 * (out["0"]["E_side_mm"] + out["1"]["E_side_mm"]),
+            "ear_halfwidth_nominal_apex_mm": 0.5 * (out["0"]["E_side_nominal_apex_mm"] + out["1"]["E_side_nominal_apex_mm"])}
+
+
 def main():
-    rd, ear, face, out = json.load(open(sys.argv[1])), json.load(open(sys.argv[2])), json.load(open(sys.argv[3])), sys.argv[4]
+    ap = argparse.ArgumentParser()
+    ap.add_argument("readout"); ap.add_argument("face"); ap.add_argument("out")
+    ap.add_argument("--screw-check"); ap.add_argument("--title", default="")
+    a = ap.parse_args()
+    rd, face, out = json.load(open(a.readout)), json.load(open(a.face)), a.out
+    ear = ear_from_knobs(rd["knobs"])
+    chk = {c["hole"]: c for c in json.load(open(a.screw_check))} if a.screw_check else {}
     rows = []
     for r in rd["screws"]:
         k = r["hole"]; d = np.array(r["dirn"]); d /= np.linalg.norm(d)
@@ -54,13 +73,15 @@ def main():
                         "fine_minus_coarse": float(s - s_coarse)})
         if "skin_ring_mm_from_origin" in r:
             row["hair_surface_gap"] = r["skin_ring_mm_from_origin"] + 4.0
+        if k in chk:
+            row["cad_screw_vs_mesh_mm"] = {key: chk[k][key] for key in ("wing", "shaft_outside", "inside")}
         rows.append(row)
     E = ear["ear_halfwidth_mm"]
     L = face["landmarks"]
     get = lambda k: np.array(L[k]["mm"]) if k in L else None
     mid = [get(k)[0] for k in ("between_eyes_168", "glabella_9", "nose_tip_1", "subnasale_2", "chin_152") if get(k) is not None]
     sym = [0.5 * (get(a)[0] + get(b)[0]) for a, b in (("eye_R_inner_133", "eye_L_inner_362"), ("eye_R_outer_33", "eye_L_outer_263"), ("mouth_R_61", "mouth_L_291"))]
-    R_ = np.array(ear["knobs"]["0"]["ball_apex_mm"]); L_ = np.array(ear["knobs"]["1"]["ball_apex_mm"]); o = 0.5 * (R_ + L_)
+    R_ = np.array(ear["knobs"]["0"]["ball_ring_mm"]); L_ = np.array(ear["knobs"]["1"]["ball_ring_mm"]); o = 0.5 * (R_ + L_)
     n = get("between_eyes_168")
     x = R_ - L_; x /= np.linalg.norm(x); y = n - o; y -= (y @ x) * x; N_y = float(np.linalg.norm(y)); y /= np.linalg.norm(y); z = np.cross(x, y)
     Rdh = np.stack([x, y, z])                                    # device -> head (rows = head axes in device coords)
@@ -68,7 +89,8 @@ def main():
     # yaw / roll of the face midline plane (normal ~ x) relative to the device
     M = np.array([get(k) for k in ("forehead_10", "glabella_9", "between_eyes_168", "nose_bridge_6", "nose_tip_1", "subnasale_2", "chin_152")])
     nrm = np.linalg.svd(M - M.mean(0))[2][2]; nrm *= np.sign(nrm[0])
-    align = {"ear_halfwidth_mm": E, "ear_ball_apex_R_mm": R_.tolist(), "ear_ball_apex_L_mm": L_.tolist(),
+    align = {"ear_halfwidth_mm": E, "ear_halfwidth_nominal_apex_mm": ear["ear_halfwidth_nominal_apex_mm"],
+             "ear_ball_ring_R_mm": R_.tolist(), "ear_ball_ring_L_mm": L_.tolist(),
              "ear_ball_midpoint_x_mm": float(o[0]), "face_midline_x_mm": float(np.mean(mid + sym)),
              "face_midline_yaw_deg": float(np.degrees(np.arctan2(nrm[1], nrm[0]))), "face_midline_roll_deg": float(np.degrees(np.arctan2(nrm[2], nrm[0]))),
              "nasion_proxy_mm": n.tolist(), "N_y_mm": N_y, "pitch_deg": pitch,
@@ -86,9 +108,9 @@ def main():
     for i, r in enumerate(rows):
         ax[0].text(i, (meas[i] if np.isfinite(meas[i]) else 0) + 1.5, f"{meas[i]:.1f}", ha="center", fontsize=8, color="tab:blue")
     ax[0].set_xticks(xs_); ax[0].set_xticklabels(NAMES); ax[0].set_ylabel("gap: frame inner face -> skin along the hole axis, mm")
-    ax[0].legend(fontsize=8, loc="upper left"); ax[0].set_title("Screw readouts (model inputs sag1-8, cor1-4)")
+    ax[0].legend(fontsize=8, loc="upper left"); ax[0].set_title(("Screw readouts (model inputs sag1-8, cor1-4)  " + a.title).strip())
     ax[1].axis("off")
-    txt = [f"ear_halfwidth (ball apexes): {E:.1f} mm   [model trained on LPA/RPA: sim {SIM_E}]",
+    txt = [f"ear_halfwidth (printed ball, innermost): {E:.1f} mm   [sim, LPA/RPA: {SIM_E}]",
            f"ear balls: R x = {R_[0]:+.1f}, L x = {L_[0]:+.1f} mm  (midpoint {o[0]:+.1f})",
            f"face midline x: {align['face_midline_x_mm']:+.1f} mm  (frame sits right of the face)",
            f"face midline yaw {align['face_midline_yaw_deg']:+.1f} deg, roll {align['face_midline_roll_deg']:+.1f} deg",
