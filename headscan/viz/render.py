@@ -128,7 +128,7 @@ def render_mesh(args):
     ctr, up, dist = head_frame(cams)
     loaded = trimesh.load(png_textures(args.mesh), process=False)
     geoms = list(loaded.geometry.values()) if isinstance(loaded, trimesh.Scene) else [loaded]
-    flip = np.diag([1.0, -1.0, -1.0])
+    flip = np.eye(3) if args.no_flip else np.diag([1.0, -1.0, -1.0])  # AliceVision OBJ = (x,-y,-z) of the SfM world
     nf = 0
     tex_meshes, plain_meshes = [], []
     for g in geoms:
@@ -170,6 +170,46 @@ def render_mesh(args):
     plt.tight_layout(); plt.savefig(args.out, dpi=100); print("wrote", args.out)
 
 
+def compare_meshes(args):
+    """One shaded geometry row (or textured with --textured) per mesh, identical cameras around the head."""
+    import pyrender
+    import trimesh
+    d, cams, X, col = load_sfm(args.sfm)
+    ctr, up, dist = head_frame(cams)
+    e1, e2 = basis(up)
+    azs = np.radians(np.arange(0, 360, 360 / args.nviews))
+    r = pyrender.OffscreenRenderer(440, 520)
+    rows = [m.split("=", 1) for m in args.meshes]
+    fig, axs = plt.subplots(len(rows), len(azs), figsize=(2.3 * len(azs), 2.75 * len(rows)), squeeze=False)
+    for ri, (lab, path) in enumerate(rows):
+        noflip = path.endswith(":noflip"); path = path[:-7] if noflip else path
+        loaded = trimesh.load(png_textures(path), process=False)
+        geoms = list(loaded.geometry.values()) if isinstance(loaded, trimesh.Scene) else [loaded]
+        flip = np.eye(3) if noflip else np.diag([1.0, -1.0, -1.0])
+        scene = pyrender.Scene(bg_color=[255, 255, 255, 255], ambient_light=[1.0] * 3 if args.textured else [0.35] * 3)
+        nf = 0
+        for g in geoms:
+            g = g.copy(); g.vertices = g.vertices @ flip
+            keepf = np.linalg.norm(g.vertices[g.faces].mean(1) - ctr, axis=1) < args.crop * dist
+            g.update_faces(keepf); g.remove_unreferenced_vertices(); nf += len(g.faces)
+            if not args.textured:
+                g = trimesh.Trimesh(g.vertices, g.faces, process=False); g.visual.vertex_colors = [200, 200, 200, 255]
+            if len(g.faces):
+                scene.add(pyrender.Mesh.from_trimesh(g, smooth=False))
+        cn = scene.add(pyrender.PerspectiveCamera(yfov=np.radians(45)))
+        ln = scene.add(pyrender.DirectionalLight(intensity=0.0 if args.textured else 3.0))
+        for ai, az in enumerate(azs):
+            rd = args.view_dist * dist
+            eye = ctr + rd * (np.cos(az) * e1 + np.sin(az) * e2) * np.cos(np.radians(10)) + rd * np.sin(np.radians(10)) * up
+            T = look_at(eye, ctr, up); scene.set_pose(cn, T); scene.set_pose(ln, T)
+            c, _ = r.render(scene)
+            axs[ri, ai].imshow(c); axs[ri, ai].set_xticks([]); axs[ri, ai].set_yticks([])
+            for sp in axs[ri, ai].spines.values(): sp.set_visible(False)
+            if ai == 0:
+                axs[ri, ai].set_ylabel(f"{lab}\n{nf / 1000:.0f}k faces", fontsize=9)
+    fig.suptitle(args.title); plt.tight_layout(); plt.savefig(args.out, dpi=95); print("wrote", args.out)
+
+
 def main():
     ap = argparse.ArgumentParser()
     sp = ap.add_subparsers(dest="cmd", required=True)
@@ -178,8 +218,12 @@ def main():
     b.add_argument("--crop", type=float, default=None); b.add_argument("--title", default="")
     b.add_argument("--untextured", action="store_true"); b.add_argument("--nviews", type=int, default=6)
     b.add_argument("--view-dist", type=float, default=0.75); b.add_argument("--fov", type=float, default=45)
+    b.add_argument("--no-flip", action="store_true", help="mesh already in SfM world axes (not an AliceVision OBJ)")
+    c = sp.add_parser("compare"); c.add_argument("sfm"); c.add_argument("out"); c.add_argument("meshes", nargs="+", help="LABEL=PATH[:noflip]")
+    c.add_argument("--crop", type=float, default=0.4); c.add_argument("--title", default=""); c.add_argument("--nviews", type=int, default=6)
+    c.add_argument("--view-dist", type=float, default=0.6); c.add_argument("--textured", action="store_true")
     args = ap.parse_args()
-    plot_sfm(args) if args.cmd == "sfm" else render_mesh(args)
+    {"sfm": plot_sfm, "mesh": render_mesh, "compare": compare_meshes}[args.cmd](args)
 
 
 if __name__ == "__main__":
