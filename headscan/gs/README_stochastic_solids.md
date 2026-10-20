@@ -56,7 +56,9 @@ surface are never integrated, and marching cubes is not masked, so a second surf
 triangles are never seen by any camera. The true outer layer is also wound inside-out (`faces[:, ::-1]`): 99 % of its
 camera-visible triangles face away from the cameras that see them. render.py (pyrender) culls back faces, so the raw
 mesh renders as its inner layer, about 6 mm shrunk and blurred (`figures/compare_geometry_raw.png`, top row).
-Fix in fuse_tsdf.py: `marching_cubes(..., mask=W >= min_weight)` or -1 behind observed surfaces, then check the winding.
+Fixed in fuse_tsdf.py (commit f3aad3987: only crossings between observed voxels, faces wound towards free space). The
+fixed meshes are on Drive as step5/tsdf_mvs_fixed.ply and tsdf_mvs_lidar_fixed.ply. The fixed MVS TSDF's surface equals
+the camera-visible layer used below (median 0.00 mm, p90 0.19 mm), so the numbers here stand.
 For a fair comparison, `surface_compare.py --visible` keeps in every mesh only the triangles that some training camera
 sees unoccluded and inside its image, and turns each one to face the cameras. That removes 48 % of the reference
 (its inner layer) and 1-2 % of the splat meshes. The figures use these camera-visible meshes (`head/visible/`).
