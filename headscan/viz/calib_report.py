@@ -62,7 +62,7 @@ def main():
             H = R["head"]; err = {k: np.array(H[a.pitch][k + "_err"]) for k, _, _ in SERIES}
             panel(ax, "head capture (constants from the 3 table captures)", np.arange(12), err, "ruler")
     axs[0, 0].legend(loc="upper right", fontsize=8.5, frameon=False, ncol=3)
-    fig.suptitle(f"Screw readouts vs measured (thread pitch {R['screws'][a.pitch]['loco'][next(iter(loco))]['pitch']:.3f} mm; shaded = +-0.5 mm)",
+    fig.suptitle(f"Screw readouts vs measured (thread pitch {R['screws'][a.pitch]['loco'][next(iter(loco))]['pitch']:.3f} mm; shaded = ±0.5 mm)",
                  fontsize=11, color=INK, x=0.01, ha="left")
     plt.tight_layout(); plt.savefig(a.out, dpi=110, facecolor="white"); print("wrote", a.out)
 
