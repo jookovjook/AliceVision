@@ -297,7 +297,8 @@ const STEPS = [
           "Part B (coronal arch) bends: tags 7, 13, 10, 12 stay 1.4–2.6 mm off; B sits 1.3° and ~3 mm off A at the joint.",
           "Fitting the parts separately removes every wrong-turn screw reading: fine gaps vs ruler 0.68 mm mean, 1.56 mm max (was 1.52 / 3.65).",
           "Part B in 3 rigid segments (right arch, apex block, left arch): every tag within 0.3–0.7 mm; the arch bends 2.6° end to end.",
-          "Calibrating 2 constants (coarse bias ~1 mm, thread phase 0.45 mm) gives 0.39 mm mean, 1.41 mm max, scored leave-one-out; 9 of 12 within ±0.45 mm."] },
+          "Calibrating 2 constants (coarse bias ~1 mm, thread phase 0.45 mm) gives 0.39 mm mean, 1.41 mm max, scored leave-one-out; 9 of 12 within ±0.45 mm.",
+          "Image-space fit (all 8284 corner observations, screws free to tilt ~1–2° in their holes): 0.88 px, coarse bias halves to +0.59 mm, uncalibrated 0.63 / 1.14 mm; calibrated stays 0.39 / 1.41 mm."] },
   { k: "gs", no: "GS", t: "Gaussian splatting", model: "gs_stochastic_solids", figs: ["ss_compare_geometry", "dn_compare_geometry", "dn_closeup_face_ears"],
     pts: ["Stochastic Solids (RGB only, frozen metric poses) is the best surface: clean face, ears, hair, arc and every screw.",
           "It agrees with the photo TSDF to 0.9 mm median; on it all 12 CAD screws are confirmed and face landmarks tighten to 2.5 mm.",
@@ -560,7 +561,7 @@ function buildSteps() {
 
 function cadTable(C) {
   const lab = { G_sim: "Global, tags (step 4)", G_rig: "Global, tags, CAD scale", G_icp: "Global, shape only", G_mix: "Global, tags + shape",
-    G_mixs: "Global, tags + shape, free scale", P_mix: "Per part, tags + shape", P_mixs: "Per part, free scale", S_mix: "Part B in 3 segments", L_mix: "Local, per screw" };
+    G_mixs: "Global, tags + shape, free scale", P_mix: "Per part, tags + shape", P_mixs: "Per part, free scale", S_mix: "Part B in 3 segments", L_mix: "Local, per screw", I_fit: "Image space: frame + screws fitted to 2-D corners" };
   const f = (v, d = 2) => v == null || isNaN(v) ? "–" : v.toFixed(d);
   $("#cadtable tbody").innerHTML = Object.entries(C.summary).map(([k, r]) => `<tr${k === "S_mix" ? ' class="sel"' : ""}><td>${lab[k] || k}</td>
     <td class="mono">${f(r.scale.A, 4)}</td><td class="mono">${f(r.scale.B, 4)}</td><td class="mono">${r.tag_res_rms_mm != null ? f(r.tag_res_rms_mm) + " mm" : "–"}</td>
