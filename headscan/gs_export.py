@@ -1,6 +1,6 @@
 """Export the metric device-frame reconstruction for Gaussian-splatting tools (COLMAP + nerfstudio formats).
 
-    python gs_export.py DEVICE_SFM CAPTURE OUT_DIR [--k 0.99384] [--margin 4]
+    python gs_export.py DEVICE_SFM CAPTURE OUT_DIR [--k 0.99384] [--margin 4] [--scale 1]
 
 Images are re-sampled ONCE from the recorded frames onto an ideal, CENTRED pinhole (square pixels, f = the refined
 SfM focal) with the same camera model the poses were refined with (AliceVision pinhole + radialk3 about the
@@ -17,6 +17,9 @@ OUT_DIR/
   depth_conf/<frame>.jpg        AGS-Mesh confidence image (black = trusted, white = ignore)
   points3D.ply                  same landmarks as PLY (nerfstudio init)
   export_check.json             reprojection of the SfM observations through the export (should match the SfM)
+
+--scale S multiplies every world coordinate (camera centres, points, depth) by S, for trainers with absolute
+distance limits (the 3DGS rasterizer culls everything nearer than 0.2 units); divide their outputs by S.
 """
 import argparse
 import json
@@ -80,6 +83,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("sfm"); ap.add_argument("capture"); ap.add_argument("out")
     ap.add_argument("--k", type=float, default=0.99384); ap.add_argument("--margin", type=int, default=4)
+    ap.add_argument("--scale", type=float, default=1.0, help="world units per device-frame metre in the export")
     a = ap.parse_args()
     out, cap = Path(a.out), Path(a.capture)
     for s in ("images", "sparse/0", "depth", "depth_conf"):
@@ -102,6 +106,7 @@ def main():
         img = cv2.imread(v["path"])
         cv2.imwrite(str(out / "images" / name), cv2.remap(img, mu32, mv32, cv2.INTER_CUBIC))
         R, C = P[v["poseId"]]                     # R = c_R_w (OpenCV camera)
+        C = C * a.scale
         t = -R @ C
         q = Rotation.from_matrix(R).as_quat()     # x, y, z, w
         imgs_txt += [f"{n} {q[3]:.9f} {q[0]:.9f} {q[1]:.9f} {q[2]:.9f} {t[0]:.9f} {t[1]:.9f} {t[2]:.9f} 1 {name}", ""]
@@ -111,7 +116,7 @@ def main():
         good = cv2.erode(good.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)  # 2 px from any invalid / low-confidence pixel
         spread = cv2.dilate(z, np.ones((3, 3))) - cv2.erode(z, np.ones((3, 3)))
         good &= spread < 10.0
-        zt = np.where(good[di, dj], z[di, dj] * a.k, 0).astype(np.uint16)
+        zt = np.where(good[di, dj], z[di, dj] * a.k * a.scale, 0).astype(np.uint16)
         cv2.imwrite(str(out / "depth" / name), zt)
         cv2.imwrite(str(out / "depth_conf" / name.replace(".png", ".jpg")), np.where(zt > 0, 0, 255).astype(np.uint8), [cv2.IMWRITE_JPEG_QUALITY, 100])
         c2w = np.eye(4); c2w[:3, :3] = R.T; c2w[:3, 3] = C
@@ -150,17 +155,19 @@ def main():
         fp.write(f"ply\nformat ascii 1.0\nelement vertex {len(pts)}\nproperty float x\nproperty float y\nproperty float z\n"
                  "property uchar red\nproperty uchar green\nproperty uchar blue\nend_header\n")
         for i, (X, obs, _) in enumerate(pts):
+            X = X * a.scale
             fp.write(f"{X[0]:.6f} {X[1]:.6f} {X[2]:.6f} {col[i][0]} {col[i][1]} {col[i][2]}\n")
             pts_txt.append(f"{i + 1} {X[0]:.6f} {X[1]:.6f} {X[2]:.6f} {col[i][0]} {col[i][1]} {col[i][2]} 0.5")  # no tracks: 2D points are not exported
-    (out / "sparse/0/cameras.txt").write_text("# PINHOLE, centred, undistorted, device frame metres\n" + "\n".join(cams_txt) + "\n")
+    (out / "sparse/0/cameras.txt").write_text(f"# PINHOLE, centred, undistorted, device frame x {a.scale:g} (units per metre)\n" + "\n".join(cams_txt) + "\n")
     (out / "sparse/0/images.txt").write_text("# IMAGE_ID QW QX QY QZ TX TY TZ CAMERA_ID NAME (world->camera)\n" + "\n".join(imgs_txt) + "\n")
     (out / "sparse/0/points3D.txt").write_text("# POINT3D_ID X Y Z R G B ERROR (tracks omitted)\n" + "\n".join(pts_txt) + "\n")
     json.dump({"camera_model": "OPENCV", "fl_x": f, "fl_y": f, "cx": Wn / 2, "cy": Hn / 2, "w": Wn, "h": Hn,
                "k1": 0, "k2": 0, "p1": 0, "p2": 0, "frames": frames, "ply_file_path": "points3D.ply",
                "depth_unit_scale_factor": 0.001,
-               "note": "device frame (ear-axis origin, x right, y forward, z up), metres; OpenGL camera axes"},
+               "scene_scale": a.scale,
+               "note": "device frame (ear-axis origin, x right, y forward, z up), metres x scene_scale; OpenGL camera axes"},
               open(out / "transforms.json", "w"), indent=1)
-    chk = {"target": [Wn, Hn], "f": f, "views": len(frames), "points": len(pts),
+    chk = {"target": [Wn, Hn], "f": f, "views": len(frames), "points": len(pts), "scene_scale": a.scale,
            "reproj_px": {"median": float(np.median(errs)), "p90": float(np.percentile(errs, 90)), "n": int(len(errs))},
            "lidar_valid_fraction": float(np.mean([(cv2.imread(str(out / "depth" / fr["file_path"].split("/")[1]), -1) > 0).mean() for fr in frames[::10]]))}
     json.dump(chk, open(out / "export_check.json", "w"), indent=1)

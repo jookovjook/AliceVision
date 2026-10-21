@@ -32,6 +32,8 @@ VOCTREE = os.environ.get("ALICEVISION_VOCTREE", f"{AV}/share/aliceVision/vlfeat_
 
 def run(cmd, logf, cwd=None):
     cmd = [str(c) for c in cmd]
+    if os.environ.get("AV_CORES") and Path(cmd[0]).name.startswith("aliceVision_"):
+        cmd += ["--maxCoresAvailable", os.environ["AV_CORES"]]   # boxes report every host CPU (libgomp runs out of threads)
     t0 = time.time()
     with open(logf, "a") as lf:
         lf.write("\n$ " + " ".join(shlex.quote(c) for c in cmd) + "\n"); lf.flush()
@@ -79,7 +81,7 @@ class P:
         if d is None: return
         run([av("featureExtraction"), "--input", self.d["init"] / "cameraInit.sfm", "--output", d,
              "--describerTypes", self.a.describers, "--describerPreset", self.a.preset, "--describerQuality", "high",
-             "--forceCpuExtraction", "1", "--maxThreads", "0", "--verboseLevel", "info"], d / "cmd.log")
+             "--forceCpuExtraction", "1", "--maxThreads", os.environ.get("AV_CORES", "0"), "--verboseLevel", "info"], d / "cmd.log")
         (d / "done").touch()
 
     def matching(self):

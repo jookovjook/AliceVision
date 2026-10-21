@@ -9,7 +9,8 @@ S2=$1; OUT=$2
 . /opt/av/env.sh
 mkdir -p "$OUT"/feat_tags "$OUT"/match_tags "$OUT"/sfm
 LOG="$OUT/cmd.log"
-run() { echo "\$ $*" >> "$LOG"; "$@" >> "$LOG" 2>&1 || { tail -40 "$LOG"; echo "FAILED: $1"; exit 1; }; echo "  $(basename "$1") ok"; }
+CORES=(${AV_CORES:+--maxCoresAvailable $AV_CORES})
+run() { echo "\$ $* ${CORES[*]}" >> "$LOG"; "$@" "${CORES[@]}" >> "$LOG" 2>&1 || { tail -40 "$LOG"; echo "FAILED: $1"; exit 1; }; echo "  $(basename "$1") ok"; }
 POSED="$S2/04_sfm/sfm_col.sfm"          # step-2B views + refined poses + intrinsics (+ SIFT landmarks)
 INIT="$S2/04_sfm/cameras.sfm"           # same views/poses without landmarks
 run aliceVision_featureExtraction --input "$S2/00_init/cameraInit.sfm" --output "$OUT/feat_tags" --describerTypes tag36h11 \

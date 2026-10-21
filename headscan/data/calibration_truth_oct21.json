@@ -1,0 +1,18 @@
+{
+ "note": "Jack's vernier-caliper measurements of the frame on the table (Oct 21 2026), taken after each recording without touching the frame. D = outer end of the screw wing -> inner face of the arc, along the screw (mm), holes 0-7 = main arc front (nose) -> back, holes 8-11 = second arc right ear -> left ear. gap = screw_length - D (inner face -> tip). K = barrel end -> flat face of the knob (mm), 0 = screwed fully in. Holes 3 and 4 cannot reach the full depth (thicker plates). Screws are loose and tilt under gravity when unscrewed.",
+ "screw_length_mm": 95.5,
+ "thread_10_crests_mm": 25.08,
+ "wing_width_mm": 22.14,
+ "arc_depth_mm": 10.3,
+ "arc_width_mm": 20.0,
+ "sticker_black_width_mm": 16.14,
+ "captures": {
+  "calibration_1": {"what": "all screws as deep as possible, knobs fully in",
+                    "D_mm": [37.0, 37.4, 37.4, 40.3, 39.2, 37.1, 37.4, 36.8, 36.9, 37.3, 37.1, 36.7], "K_mm": [0.0, 0.0]},
+  "calibration_2": {"what": "all screws out until the tips align with the inner surface (D = full screw length)",
+                    "D_mm": [95.5, 95.5, 95.5, 95.5, 95.5, 95.5, 95.5, 95.5, 95.5, 95.5, 95.5, 95.5], "K_mm": [61.41, 61.30]},
+  "calibration_3": {"what": "screws at different depths (about 1.5 to 15 turns)",
+                    "D_mm": [92.95, 90.95, 88.13, 85.75, 83.51, 81.21, 79.09, 75.88, 74.59, 71.38, 69.09, 66.8], "K_mm": [27.41, 25.12]}
+ },
+ "head_capture_6ba4b7d84f": {"note": "ruler gaps (inner face -> tip, mm), session 1", "gap_mm": [3.5, 4, 4, 1.5, 19.5, 34, 52.5, 59, 26, 9.5, 8, 17.5]}
+}

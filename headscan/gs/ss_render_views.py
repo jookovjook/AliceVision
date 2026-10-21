@@ -19,6 +19,7 @@ def main():
     ap.add_argument("--center", type=float, nargs=3, default=[0.02, 0.04, 0.04])
     ap.add_argument("--views", nargs="*", default=[])  # not None: get_combined_args drops None-valued args
     ap.add_argument("--crop-m", type=float, default=0.36, help="panel side at the head, metres")
+    ap.add_argument("--scale", type=float, default=1.0, help="training units per device-frame metre")
     pre = ap.parse_known_args()[0]
     sys.path.insert(0, os.path.abspath(pre.repo)); os.chdir(os.path.abspath(pre.repo))
     import matplotlib
@@ -37,7 +38,8 @@ def main():
     g = GaussianModel(dataset.sh_degree, dataset.sg_degree)
     scene = Scene(dataset, g, load_iteration=args.iteration, shuffle=False)
     cams = scene.getTrainCameras()
-    ctr = np.array(args.center)
+    S = args.scale
+    ctr = np.array(args.center) * S
     C = np.array([c.camera_center.cpu().numpy() for c in cams])
     u = (C - ctr) / np.linalg.norm(C - ctr, axis=1, keepdims=True)
     if args.views:
@@ -56,11 +58,11 @@ def main():
         # head crop: project the centre, square of crop_m metres at its depth
         Xc = ctr @ cam.R.cpu().numpy() + cam.T.cpu().numpy()
         px, py = cam.Fx * Xc[0] / Xc[2] + cam.Cx, cam.Fy * Xc[1] / Xc[2] + cam.Cy
-        hs = int(0.5 * args.crop_m * cam.Fx / Xc[2])
+        hs = int(0.5 * args.crop_m * S * cam.Fx / Xc[2])
         H, W = dep.shape
         y0, y1, x0, x1 = max(0, int(py) - hs), min(H, int(py) + hs), max(0, int(px) - hs), min(W, int(px) + hs)
         sl = (slice(y0, y1), slice(x0, x1))
-        dd = dep[sl]; ok = (dd > 0) & (np.abs(dd - Xc[2]) < 0.2)
+        dd = dep[sl] / S; ok = (dd > 0) & (np.abs(dd - Xc[2] / S) < 0.2)
         lo_, hi_ = (np.percentile(dd[ok], [2, 98]) if ok.any() else (0, 1))
         panels = [(gt[sl], f"input {cam.image_name}"), (rgb[sl], "splat render"),
                   ((np.clip(-nrm[sl], -1, 1) + 1) / 2, "rendered normal (camera frame)"),

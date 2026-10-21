@@ -1,7 +1,7 @@
 """Head-region outputs of a trained Stochastic Solids model (HKUST-SAIL/Gaussian-Splatting-with-Stochastic-Solids).
 
     python ss_head_extract.py --repo REPO -m MODEL_DIR --out OUT_DIR [--center 0.02 0.04 0.04 --half 0.22]
-                              [--what centres tsdf tetra] [--voxel 0.001 --trunc 0.006] [--iteration -1]
+                              [--what centres tsdf tetra] [--voxel 0.001 --trunc 0.006] [--iteration -1] [--scale 1]
 
 Runs in the repo's env (needs its CUDA extensions); everything stays in the training (COLMAP = device) frame, metres.
   centres  Gaussian centres inside the cube -> OUT/gaussian_centres.ply (RGB from SH DC, opacity, max scale)
@@ -9,6 +9,8 @@ Runs in the repo's env (needs its CUDA extensions); everything stays in the trai
            voxel/truncation instead of its hard-coded 2 mm, depth pixels outside the cube zeroed -> OUT/tsdf.ply
   tetra    the repo's TnT extractor (mesh_extract_tetrahedra.py: marching tetrahedra on the Gaussian tetra points,
            10 binary-search steps, vertex colours) with the tetra points cut to the cube -> OUT/tetra.ply
+--scale S: the model was trained on an export scaled by S (gs_export.py --scale); cube, voxel and truncation stay
+in device metres and every output is scaled back to device metres.
 Both meshes keep connected components with >= 2 % of the largest one's triangles (as headscan/fuse_tsdf.py), so the
 arc survives when it is not connected to the head; the repo keeps only the largest component.
 """
@@ -50,6 +52,7 @@ def main():
     ap.add_argument("--voxel", type=float, default=0.001)
     ap.add_argument("--trunc", type=float, default=0.006)
     ap.add_argument("--min_opacity", type=float, default=0.0, help="centres: drop Gaussians below this opacity")
+    ap.add_argument("--scale", type=float, default=1.0, help="training units per device-frame metre")
     sys.path.insert(0, os.path.abspath(ap.parse_known_args()[0].repo))
     os.chdir(os.path.abspath(ap.parse_known_args()[0].repo))
 
@@ -67,7 +70,9 @@ def main():
     args = get_combined_args(ap)
     dataset, pipe = model.extract(args), pipeline.extract(args)
     os.makedirs(args.out, exist_ok=True)
-    ctr = np.array(args.center); lo, hi = ctr - args.half, ctr + args.half
+    S = args.scale
+    ctr = np.array(args.center) * S; lo, hi = ctr - args.half * S, ctr + args.half * S
+    vox, trunc = args.voxel * S, args.trunc * S
 
     torch.set_grad_enabled(False)
     gaussians = GaussianModel(dataset.sh_degree, dataset.sg_degree)
@@ -84,21 +89,21 @@ def main():
         from plyfile import PlyData, PlyElement
         el = np.empty(m.sum(), dtype=[("x", "f4"), ("y", "f4"), ("z", "f4"), ("red", "u1"), ("green", "u1"), ("blue", "u1"),
                                       ("opacity", "f4"), ("scale", "f4")])
-        el["x"], el["y"], el["z"] = xyz[m].T
+        el["x"], el["y"], el["z"] = xyz[m].T / S
         el["red"], el["green"], el["blue"] = (rgb[m] * 255 + 0.5).astype(np.uint8).T
-        el["opacity"], el["scale"] = op[m], sc[m]
+        el["opacity"], el["scale"] = op[m], sc[m] / S
         PlyData([PlyElement.describe(el, "vertex")]).write(os.path.join(args.out, "gaussian_centres.ply"))
         print(f"centres: {m.sum()} of {len(xyz)} Gaussians in the cube; opacity median {np.median(op[m]):.2f}, "
-              f"scale median {np.median(sc[m]) * 1e3:.2f} mm", flush=True)
+              f"scale median {np.median(sc[m]) / S * 1e3:.2f} mm", flush=True)
 
     if "tsdf" in args.what:
         t0 = time.time()
         bg = torch.tensor([1.0, 1.0, 1.0], device="cuda")  # as mesh_extract.py
         vbg = o3d.t.geometry.VoxelBlockGrid(attr_names=("tsdf", "weight", "color"),
                                             attr_dtypes=(o3c.float32, o3c.float32, o3c.float32),
-                                            attr_channels=((1), (1), (3)), voxel_size=args.voxel,
+                                            attr_channels=((1), (1), (3)), voxel_size=vox,
                                             block_resolution=16, block_count=400000, device=o3d.core.Device("CPU:0"))
-        lo_t, hi_t = torch.tensor(lo - args.trunc, device="cuda"), torch.tensor(hi + args.trunc, device="cuda")
+        lo_t, hi_t = torch.tensor(lo - trunc, device="cuda"), torch.tensor(hi + trunc, device="cuda")
         for cam in cams:
             pkg = render(cam, gaussians, pipe, bg, dataset.kernel_size)
             rgb = torch.clamp(pkg["render"], 0, 1).permute(1, 2, 0).contiguous()
@@ -113,10 +118,11 @@ def main():
             E = o3c.Tensor(cam.world_view_transform.T.cpu().numpy().astype(np.float64))
             di = o3d.t.geometry.Image(d.cpu().numpy())
             ci = o3d.t.geometry.Image(rgb.cpu().numpy())
-            blocks = vbg.compute_unique_block_coordinates(di, K, E, 1.0, 8.0, trunc_voxel_multiplier=args.trunc / args.voxel)
-            vbg.integrate(blocks, di, ci, K, E, 1.0, 8.0, trunc_voxel_multiplier=args.trunc / args.voxel)
+            blocks = vbg.compute_unique_block_coordinates(di, K, E, 1.0, 8.0 * S, trunc_voxel_multiplier=trunc / vox)
+            vbg.integrate(blocks, di, ci, K, E, 1.0, 8.0 * S, trunc_voxel_multiplier=trunc / vox)
         mesh = vbg.extract_triangle_mesh().to_legacy()
         mesh = keep_components(crop_mesh(mesh, lo, hi))
+        mesh.scale(1 / S, center=np.zeros(3))
         mesh.compute_vertex_normals()
         o3d.io.write_triangle_mesh(os.path.join(args.out, "tsdf.ply"), mesh)
         print(f"tsdf: {len(mesh.triangles)} triangles, voxel {args.voxel * 1e3:.2f} mm, trunc {args.trunc * 1e3:.1f} mm, "
@@ -142,6 +148,7 @@ def main():
                                                    export_color=True, move_cpu=args.move_cpu, save_cells=False, num_cluster=1)
         mesh = o3d.io.read_triangle_mesh(os.path.join(tdir, "recon_post.ply"))
         mesh = crop_mesh(mesh, lo, hi)
+        mesh.scale(1 / S, center=np.zeros(3))
         o3d.io.write_triangle_mesh(os.path.join(args.out, "tetra.ply"), mesh)
         print(f"tetra: {len(mesh.triangles)} triangles, {time.time() - t0:.0f} s", flush=True)
 

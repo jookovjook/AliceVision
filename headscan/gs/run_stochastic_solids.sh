@@ -23,7 +23,8 @@ REF_SFM=${REF_SFM:-/workspace/work/ref/sfm_device.sfm}
 VIZ_VENV=${VIZ_VENV:-/workspace/venv-viz}
 RES=${RES:-1}                       # -r 1 = full 1816x1360
 DATA_DEVICE=${DATA_DEVICE:-cpu}     # 248 full-res frames as float32 RGB+grey = 9.8 GB; keep them off the GPU
-CENTER="0.02 0.04 0.04"; HALF=0.22  # head cube, device frame
+CENTER=${CENTER:-"0.02 0.04 0.04"}; HALF=${HALF:-0.22}  # head cube, device frame (metres)
+SCALE=${SCALE:-1}                   # training units per device metre (gs_export.py --scale); outputs come back in metres
 DRIVE=${DRIVE:-gdrive:frame_capture/6ba4b7d84f_recon/gs/stochastic_solids}
 MODEL=$OUT/model
 mkdir -p "$OUT/logs"
@@ -78,11 +79,11 @@ extract() {
   nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits -lms 2000 > "$OUT/logs/extract_gpu_mem.csv" &
   local SMI=$!
   PYTORCH_ALLOC_CONF=expandable_segments:True python "$HERE/ss_head_extract.py" --repo "$REPO" -m "$MODEL" --out "$OUT/head" \
-    --center $CENTER --half $HALF --what centres tsdf tetra --voxel 0.001 --trunc 0.006 ${MOVE_CPU:+--move_cpu} \
+    --center $CENTER --half $HALF --scale $SCALE --what centres tsdf tetra --voxel 0.001 --trunc 0.006 ${MOVE_CPU:+--move_cpu} \
     2>&1 | stdbuf -oL tr '\r' '\n' | grep --line-buffered -v "progress.*it/s\]$" > "$OUT/logs/extract.log"
   kill $SMI || true
   echo "extract_seconds $(( $(date +%s) - T0 ))  peak_gpu_mib $(sort -n "$OUT/logs/extract_gpu_mem.csv" | tail -1)" | tee -a "$OUT/logs/extract.log"
-  python "$HERE/ss_render_views.py" --repo "$REPO" -m "$MODEL" --out "$OUT/figures/splat_views.png" --center $CENTER
+  python "$HERE/ss_render_views.py" --repo "$REPO" -m "$MODEL" --out "$OUT/figures/splat_views.png" --center $CENTER --scale $SCALE
 }
 
 compare() {
