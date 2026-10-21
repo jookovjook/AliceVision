@@ -1,0 +1,545 @@
+<title>Head Arc Scan Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@500;600;700&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a measurement sheet. Top: the 3-D bench (viewer + instrument panel). Below: readouts, the step log, figures. */
+:root {
+  --paper: #f3f4f1; --sheet: #ffffff; --ink: #1d2430; --ink-2: #4a5466; --rule: #d9ddd6; --grid: #e8ebe5;
+  --accent: #1f4fa3; --accent-soft: #e3eaf7;
+  --frame: #3b5ea8; --screw: #c76b1c; --ear: #3c8f4f; --sim: #9aa2ad; --hair: #e08a2c; --warn: #b4442c; --ok: #2e7d4f;
+  --display: "Archivo Narrow", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --body: "Atkinson Hyperlegible", "Segoe UI", Helvetica, Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --viewer-bg: #eef0ec;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #14171c; --sheet: #1b1f26; --ink: #e6e9ee; --ink-2: #a6afbd; --rule: #2d333d; --grid: #20252d;
+  --accent: #8fb2f0; --accent-soft: #23304a; --frame: #7f9de0; --screw: #f0a057; --ear: #7cc98d; --sim: #6c7480; --hair: #f2a95a;
+  --warn: #ef8a72; --ok: #79c99a; --viewer-bg: #1a1e25; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --paper: #14171c; --sheet: #1b1f26; --ink: #e6e9ee; --ink-2: #a6afbd; --rule: #2d333d; --grid: #20252d;
+  --accent: #8fb2f0; --accent-soft: #23304a; --frame: #7f9de0; --screw: #f0a057; --ear: #7cc98d; --sim: #6c7480; --hair: #f2a95a;
+  --warn: #ef8a72; --ok: #79c99a; --viewer-bg: #1a1e25; color-scheme: dark }
+* { box-sizing: border-box }
+body { background: var(--paper); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 18px 40px }
+.wrap { max-width: 1320px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px }
+h1, h2, h3 { font-family: var(--display); letter-spacing: .01em; text-wrap: balance; margin: 0 }
+h1 { font-size: 30px; font-weight: 700 } h2 { font-size: 22px; font-weight: 600 } h3 { font-size: 17px; font-weight: 600 }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums }
+.lab { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2) }
+header { display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: end; justify-content: space-between; border-bottom: 2px solid var(--ink); padding-bottom: 12px }
+header p { margin: 4px 0 0; color: var(--ink-2); max-width: 70ch }
+nav { display: flex; flex-wrap: wrap; gap: 6px }
+nav a { font-family: var(--mono); font-size: 12px; color: var(--ink); text-decoration: none; padding: 5px 10px; border: 1px solid var(--rule); background: var(--sheet) }
+nav a:hover, nav a:focus-visible { border-color: var(--accent); color: var(--accent); outline: none }
+section { display: flex; flex-direction: column; gap: 14px }
+.sec-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px }
+.sec-head p { margin: 0; color: var(--ink-2); max-width: 75ch }
+
+/* bench */
+.bench { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 0; border: 1px solid var(--rule); background: var(--sheet) }
+@media (max-width: 900px) { .bench { grid-template-columns: minmax(0, 1fr) } }
+.stage { position: relative; min-height: 560px; height: 68vh; max-height: 760px; background: var(--viewer-bg);
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size: 24px 24px }
+@media (max-width: 900px) { .stage { height: 62vh; min-height: 380px } }
+#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none }
+.overlay { position: absolute; inset: 0; pointer-events: none; overflow: hidden }
+.tag { position: absolute; transform: translate(-50%, -120%); font-family: var(--mono); font-size: 10.5px; padding: 1px 5px; background: var(--sheet); color: var(--ink);
+  border: 1px solid var(--rule); white-space: nowrap }
+.tag.scr { border-color: var(--screw) } .tag.ear { border-color: var(--ear) } .tag.lm { border-color: var(--accent) }
+.hud { position: absolute; left: 12px; top: 12px; display: flex; flex-direction: column; gap: 4px; max-width: calc(100% - 24px); pointer-events: none }
+.hud .name { font-family: var(--display); font-size: 18px; font-weight: 600; background: var(--sheet); padding: 2px 8px; border-left: 3px solid var(--accent); align-self: flex-start }
+.hud .meta { font-family: var(--mono); font-size: 11px; color: var(--ink-2); background: var(--sheet); padding: 2px 8px; align-self: flex-start }
+.status { position: absolute; right: 12px; bottom: 12px; font-family: var(--mono); font-size: 11px; color: var(--ink-2); background: var(--sheet); padding: 3px 8px; border: 1px solid var(--rule) }
+.measure-box { position: absolute; left: 12px; bottom: 12px; font-family: var(--mono); font-size: 12px; background: var(--sheet); border: 1px solid var(--screw); padding: 6px 10px; max-width: calc(100% - 24px) }
+.panel { border-left: 1px solid var(--rule); padding: 14px; display: flex; flex-direction: column; gap: 16px; max-height: 760px; overflow: auto }
+@media (max-width: 900px) { .panel { border-left: 0; border-top: 1px solid var(--rule); max-height: none } }
+.group { display: flex; flex-direction: column; gap: 6px }
+.models { display: flex; flex-direction: column; gap: 2px }
+.m { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 6px; border: 1px solid transparent; cursor: pointer; font-size: 14px }
+.m:hover { background: var(--accent-soft) }
+.m.on { border-color: var(--accent); background: var(--accent-soft) }
+.m input { margin: 0; accent-color: var(--accent) }
+.m .fc { font-family: var(--mono); font-size: 10.5px; color: var(--ink-2) }
+.m .best { font-family: var(--mono); font-size: 10px; color: var(--ok); border: 1px solid var(--ok); padding: 0 4px; margin-left: 4px }
+.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center }
+button, select { font: inherit; font-size: 13px; color: var(--ink); background: var(--sheet); border: 1px solid var(--rule); padding: 5px 9px; cursor: pointer }
+button:hover { border-color: var(--accent) }
+button:focus-visible, select:focus-visible, input:focus-visible, .m:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px }
+button.on { background: var(--accent); color: var(--sheet); border-color: var(--accent) }
+.chk { display: flex; gap: 8px; align-items: center; font-size: 14px; cursor: pointer }
+.chk input { accent-color: var(--accent) }
+input[type=range] { width: 100%; accent-color: var(--accent) }
+.note { font-size: 12.5px; color: var(--ink-2); margin: 0 }
+
+/* readouts */
+.readouts { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 18px }
+@media (max-width: 960px) { .readouts { grid-template-columns: minmax(0, 1fr) } }
+.card { background: var(--sheet); border: 1px solid var(--rule); padding: 14px; min-width: 0 }
+.chart-wrap { overflow-x: auto }
+svg text { fill: var(--ink-2); font-family: var(--mono); font-size: 10.5px }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px }
+.legend label { display: flex; gap: 6px; align-items: center; cursor: pointer }
+.sw { width: 12px; height: 12px; display: inline-block }
+table { border-collapse: collapse; width: 100%; font-size: 13px }
+th, td { text-align: right; padding: 4px 6px; border-bottom: 1px solid var(--rule); font-variant-numeric: tabular-nums }
+th:first-child, td:first-child { text-align: left }
+th { font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); font-weight: 500 }
+tr.sel td { background: var(--accent-soft) }
+tbody tr { cursor: pointer }
+.kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; font-size: 13.5px }
+.kv dt { color: var(--ink-2) } .kv dd { margin: 0; font-family: var(--mono); text-align: right }
+.flag { color: var(--warn) } .good { color: var(--ok) }
+.table-wrap { overflow-x: auto }
+
+/* steps */
+.steps { display: flex; flex-direction: column; gap: 0; border-top: 1px solid var(--rule) }
+.step { display: grid; grid-template-columns: 96px minmax(0, 1fr) minmax(0, 300px); gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--rule) }
+@media (max-width: 860px) { .step { grid-template-columns: minmax(0, 1fr) } }
+.step .no { font-family: var(--display); font-size: 15px; font-weight: 700; color: var(--accent) }
+.step .no small { display: block; font-family: var(--mono); font-size: 10.5px; color: var(--ink-2); font-weight: 400; letter-spacing: .06em; text-transform: uppercase }
+.step ul { margin: 6px 0 0; padding-left: 18px } .step li { margin: 2px 0; max-width: 72ch }
+.step .side { display: flex; flex-direction: column; gap: 8px }
+.thumbs { display: flex; flex-wrap: wrap; gap: 6px }
+.thumbs button { padding: 0; border: 1px solid var(--rule); width: 92px; height: 62px; overflow: hidden; background: var(--sheet) }
+.thumbs img { width: 100%; height: 100%; object-fit: cover; display: block }
+.go { align-self: flex-start; font-size: 12.5px }
+
+/* gallery */
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px }
+.gallery figure { margin: 0; background: var(--sheet); border: 1px solid var(--rule); display: flex; flex-direction: column }
+.gallery button { padding: 0; border: 0; background: none; display: block; width: 100% }
+.gallery img { width: 100%; aspect-ratio: 16/10; object-fit: cover; display: block; max-width: 100% }
+.gallery figcaption { font-size: 12.5px; padding: 6px 8px; color: var(--ink-2) }
+.lightbox { position: fixed; inset: 0; background: rgba(10, 12, 16, .86); display: flex; align-items: center; justify-content: center; z-index: 20;
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)) }
+.lightbox img { max-width: 100%; max-height: 88vh; background: #fff }
+.lightbox .cap { position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); bottom: max(10px, env(safe-area-inset-bottom, 0px)); color: #e6e9ee; font-size: 13px; text-align: center }
+footer { color: var(--ink-2); font-size: 12.5px; border-top: 1px solid var(--rule); padding-top: 10px }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important } }
+</style>
+
+<div class="wrap">
+<header>
+  <div>
+    <span class="lab">capture 6ba4b7d84f · iPhone LiDAR video · frame size L116 · 20–21 Oct 2026</span>
+    <h1>Head Arc Scan Lab</h1>
+    <p>Every reconstruction of the head with the AprilTag frame, in one metric <em>device frame</em> (origin at the ear-axis midpoint, x to the wearer's right, y forward, z up). Rotate, cut and measure; then compare the 13 frame readouts with the simulation.</p>
+  </div>
+  <nav aria-label="Sections"><a href="#bench">3-D bench</a><a href="#readouts">Readouts</a><a href="#steps">Step log</a><a href="#gallery">Figures</a></nav>
+</header>
+
+<section id="bench">
+  <div class="bench">
+    <div class="stage" id="stage">
+      <canvas id="gl" aria-label="3-D viewer"></canvas>
+      <div class="overlay" id="overlay"></div>
+      <div class="hud"><span class="name" id="hudName">Loading…</span><span class="meta" id="hudMeta"></span></div>
+      <div class="measure-box" id="measureBox" hidden></div>
+      <div class="status" id="status">drag: rotate · right-drag: pan · wheel: zoom</div>
+    </div>
+    <div class="panel">
+      <div class="group">
+        <span class="lab">Model</span>
+        <div class="models" id="models" role="radiogroup" aria-label="Model"></div>
+      </div>
+      <div class="group">
+        <span class="lab">Overlays</span>
+        <label class="chk"><input type="checkbox" id="ovCad"> CAD frame + screws at the tag-read depth</label>
+        <label class="chk"><input type="checkbox" id="ovScrews" checked> Screw axes, tips and gaps</label>
+        <label class="chk"><input type="checkbox" id="ovEar" checked> Ear balls (from the knob tags)</label>
+        <label class="chk"><input type="checkbox" id="ovLm"> Face landmarks</label>
+        <label class="chk"><input type="checkbox" id="ovAxes" checked> Device axes (x red, y green, z blue)</label>
+      </div>
+      <div class="group">
+        <span class="lab">Surface</span>
+        <div class="row"><button id="shColour" class="on">Colour</button><button id="shClay">Clay</button><button id="shWire">Wire</button></div>
+      </div>
+      <div class="group">
+        <span class="lab">Section cut</span>
+        <div class="row">
+          <select id="clipAxis" aria-label="Cut axis"><option value="none">No cut</option><option value="x">x: sagittal (left / right)</option><option value="y">y: coronal (front / back)</option><option value="z">z: axial (up / down)</option></select>
+          <button id="clipFlip" title="Keep the other side">Flip</button>
+        </div>
+        <input type="range" id="clipPos" min="-200" max="200" value="0" step="1" aria-label="Cut position, mm">
+        <span class="note mono" id="clipLabel">cut off</span>
+      </div>
+      <div class="group">
+        <span class="lab">View</span>
+        <div class="row"><button data-view="front">Front</button><button data-view="right">Right</button><button data-view="left">Left</button><button data-view="back">Back</button><button data-view="top">Top</button></div>
+      </div>
+      <div class="group">
+        <span class="lab">Measure</span>
+        <div class="row"><button id="measureBtn">Measure distance</button><button id="measureClear">Clear</button></div>
+        <p class="note">Click two points on the surface. The distance and both points are shown in mm, device frame.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="readouts">
+  <div class="sec-head"><h2>Frame readouts</h2><p>Gap from the frame's inner face to the screw tip along each hole axis, read from the wing tags (fine reading from the wing angle, 2.5 mm per turn). Click a bar or row to show that screw in the viewer.</p></div>
+  <div class="readouts">
+    <div class="card">
+      <div class="legend" id="legend">
+        <label><input type="checkbox" data-s="sim" checked><span class="sw" style="background:var(--sim)"></span>Simulated from the MRI (L116)</label>
+        <label><input type="checkbox" data-s="meas" checked><span class="sw" style="background:var(--accent)"></span>Read from the tags</label>
+        <label><input type="checkbox" data-s="hair" checked><span class="sw" style="background:var(--hair)"></span>Hair surface on the axis (mesh)</label>
+      </div>
+      <div class="chart-wrap"><svg id="chart" viewBox="0 0 760 300" width="100%" role="img" aria-label="Readout bar chart"></svg></div>
+    </div>
+    <div class="card" style="display:flex;flex-direction:column;gap:12px">
+      <h3>How the frame sits</h3>
+      <dl class="kv" id="align"></dl>
+      <p class="note">The simulation pivots the frame on the LPA/RPA fiducials. The printed ear balls sit about 14 mm deeper, in the concha, so the frame rides lower and further forward: small gaps at the front, large ones at the back.</p>
+    </div>
+  </div>
+  <div class="card table-wrap"><table id="rtable"><thead><tr><th>Readout</th><th>Hole</th><th>Sim</th><th>Tags, coarse</th><th>Tags, fine</th><th>Wing angle ψ</th><th>Hair surface</th><th>CAD screw vs mesh: wing / shaft</th></tr></thead><tbody></tbody></table></div>
+</section>
+
+<section id="steps">
+  <div class="sec-head"><h2>Step log</h2><p>What each step added, what it found, and the model to look at.</p></div>
+  <div class="steps" id="steplist"></div>
+</section>
+
+<section id="gallery">
+  <div class="sec-head"><h2>Figures</h2><p>All figures made during the run. Click to enlarge.</p></div>
+  <div class="gallery" id="gal"></div>
+</section>
+
+<footer>Code: branch <span class="mono">feature/headscan-arc</span> of jookovjook/AliceVision (scripts under <span class="mono">headscan/</span>). Data and every intermediate file: Google Drive <span class="mono">frame_capture/6ba4b7d84f_recon/</span>. Meshes here are decimated for the browser; full-resolution files are on Drive.</footer>
+</div>
+
+<div class="lightbox" id="lb" hidden><img id="lbImg" alt=""><div class="cap" id="lbCap"></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
+<script>
+const MODELS = [
+  { id: "gs_stochastic_solids", name: "Gaussian splatting: Stochastic Solids", grp: "Best surface", best: true,
+    meta: "RGB only · 248 keyframes · frozen metric poses · 3.1 M faces full", step: "gs" },
+  { id: "seg_labels", name: "Steps 6–7: labels (frame / screws / ear / head)", grp: "Head and device", meta: "on the Stochastic Solids mesh · blue frame, orange screws, green ear hardware", step: "s67" },
+  { id: "seg_head_closed", name: "Steps 6–7: head only, closed", grp: "Head and device", meta: "magenta = filled under the frame, not measured", step: "s67" },
+  { id: "seg_device", name: "Steps 6–7: device only", grp: "Head and device", meta: "frame, screws and ear hardware cut from the mesh", step: "s67" },
+  { id: "step5_mvs_tsdf", name: "Step 5b: photo depth maps, TSDF", grp: "AliceVision", meta: "full-res MVS depth maps fused volumetrically", step: "s5" },
+  { id: "step5_mvs_graphcut", name: "Step 5: photo depth maps, graph-cut", grp: "AliceVision", meta: "aliceVision_meshing, full-res depth maps", step: "s5" },
+  { id: "step5_mvs_lidar_tsdf", name: "Step 5b: photo + LiDAR, TSDF", grp: "AliceVision", meta: "LiDAR at weight 0.3 moves the surface ~3 mm", step: "s5" },
+  { id: "step5_lidar_tsdf", name: "Step 5: LiDAR only, TSDF", grp: "AliceVision", meta: "248 LiDAR maps, 2 mm voxels", step: "s5" },
+  { id: "step2_arkit", name: "Step 2: ARKit-initialised poses", grp: "AliceVision", meta: "half-res depth maps, graph-cut", step: "s2" },
+  { id: "step1_rgb", name: "Step 1: RGB only (Meshroom 2023.3)", grp: "AliceVision", meta: "arbitrary scale, placed by ICP + camera fit", step: "s1" },
+  { id: "gs_ags_mesh", name: "GS: AGS-Mesh + LiDAR", grp: "Other methods", meta: "closest to the photo TSDF, chin underside lost", step: "gs" },
+  { id: "gs_dnsplatter_lidar", name: "GS: DN-Splatter + LiDAR", grp: "Other methods", meta: "pinned to LiDAR, face relief flattened", step: "gs" },
+  { id: "gs_dnsplatter_rgb", name: "GS: splatfacto, RGB only", grp: "Other methods", meta: "renders best, fused depth blobby", step: "gs" },
+  { id: "apple_rgbd", name: "Apple Object Capture, colour + depth", grp: "Other methods", meta: "local M4 · capped at ~30 k faces on the head", step: "apple" },
+  { id: "apple_rgb", name: "Apple Object Capture, colour only", grp: "Other methods", meta: "same geometry, arbitrary scale before the fit", step: "apple" },
+];
+const FIGS = [
+  ["step1_mesh_head", "Step 1: RGB-only textured mesh, head region"], ["step1_sfm", "Step 1: 248 cameras and 108 k SfM points"],
+  ["step1_vs_arkit", "Step 2: RGB SfM vs ARKit, the 25 mm jump at frame 1780"], ["reproj_all", "Step 2: reprojection per camera for each pose / distortion variant"],
+  ["step2_mesh_head", "Step 2: ARKit-initialised mesh, metric"], ["tags_keyframes_py_samples", "Step 3: AprilTag detections on four keyframes"],
+  ["tags_keyframes_py_presence", "Step 3: which tag was seen in which frame"], ["tag_alignment", "Step 4: frame tags vs CAD layout, tag size check"],
+  ["lidar_vs_sfm", "Step 5: LiDAR depth vs SfM points (scale and noise)"], ["step5_compare_geometry", "Step 5: photo MVS, LiDAR, fused (graph-cut)"],
+  ["step5b_compare_geometry", "Step 5b: volumetric fusion of the same depth maps"], ["slices", "Step 6: mid-sagittal and coronal slices, cut planes"],
+  ["step7_labels", "Steps 6–7 on the Stochastic Solids mesh"], ["step8_readouts", "Step 8: the 13 readouts vs simulation"],
+  ["step8_screws_check", "Step 8: CAD screws at the read depths vs reconstruction"], ["ss_compare_geometry", "GS: Stochastic Solids vs the photo TSDF"],
+  ["dn_compare_geometry", "GS: DN-Splatter, AGS-Mesh, splatfacto vs the photo TSDF"], ["dn_closeup_face_ears", "GS: face and ear close-ups (DN-Splatter runs)"],
+  ["dn_splat_renders", "GS: splat renders next to the input frames"], ["apple_comparison", "Apple Object Capture vs AliceVision steps 1–2"],
+];
+const STEPS = [
+  { k: "s1", no: "Step 1", t: "RGB-only reconstruction", model: "step1_rgb", figs: ["step1_mesh_head", "step1_sfm"],
+    pts: ["248 sharp keyframes from 1979 video frames; all 248 cameras posed, 108 k points, 1.5 px median reprojection.",
+          "All data streams carry exactly 1979 frames. ARKit dropped 5 timestamps; pairing by index stays correct.",
+          "Self-calibration found ~1.5 % pincushion at the frame edge, the opposite of the documented Apple lens table."] },
+  { k: "s2", no: "Step 2", t: "ARKit poses as input", model: "step2_arkit", figs: ["step1_vs_arkit", "reproj_all"],
+    pts: ["ARKit agrees with the RGB solve to ~3 mm but jumps ~25 mm at frame ~1780 (a tracking correction).",
+          "Locked ARKit poses: 1.47 px. ARKit as a start, refined: 0.86 px. Poses are refined from here on.",
+          "The inverse Apple lens table fits the recorded frames (1.47 px vs 1.80 px for the documented one)."] },
+  { k: "s3", no: "Step 3", t: "Reading the AprilTags", model: "seg_labels", figs: ["tags_keyframes_py_samples", "tags_keyframes_py_presence"],
+    pts: ["New AliceVision describer tag36h11: each tag gives its 4 corners as features with ID = tag×4 + corner.",
+          "Matches the reference detector to 0.011 px median over 9344 corners; 136 corner IDs become SfM landmarks.",
+          "Never seen: frame tags 6 and 11, screw tags 33, 34, 36, 43, knob tags 44, 47. Tag 20 is glued 90° off."] },
+  { k: "s4", no: "Step 4", t: "Real-world scale and the device frame", model: "seg_labels", figs: ["tag_alignment"],
+    pts: ["12 visible frame tags fit the CAD layout at 1.8 mm RMS; scale ×1.0079 over the ARKit-refined solve.",
+          "The coronal arch ends (tags 7, 10, 12) fit worst: the arch probably flexes when worn.",
+          "Tags read 15.6 mm instead of 16 mm (detector inset), so scale comes from the layout, not the tag size."] },
+  { k: "s5", no: "Step 5", t: "LiDAR depth", model: "step5_mvs_tsdf", figs: ["lidar_vs_sfm", "step5_compare_geometry", "step5b_compare_geometry"],
+    pts: ["LiDAR scale agrees with the tags to 0.6 %, but it is ~1 cm noisy per pixel; alone it gives a helmet-like shell.",
+          "Volumetric (TSDF) fusion of full-res photo depth maps recovers the arc, screws, wings, knobs and ears.",
+          "Adding LiDAR moves the surface 3 mm (median) without adding detail, so it is left out of the geometry."] },
+  { k: "s67", no: "Steps 6–7", t: "Head cut and device removal", model: "seg_labels", figs: ["slices", "step7_labels"],
+    pts: ["Head cut on a plane under the chin and at the nape, set from the mid-sagittal profile in the device frame.",
+          "Frame removed by the CAD placed with the tags (it sits on the reconstruction at 1.4 mm median).",
+          "The strip under the arc is filled by a smooth surface and flagged magenta (not measured)."] },
+  { k: "s8", no: "Step 8", t: "Device readouts and alignment", model: "cad_frame_on_gs", figs: ["step8_readouts", "step8_screws_check"],
+    pts: ["All 12 screw gaps read from the wing tags; CAD screws placed at those depths match the mesh (wings 0.4–2.1 mm).",
+          "Front gaps 4–8 mm and back gaps 37–59 mm, against 19–24 and 27–38 mm in the simulation.",
+          "Ear half-width 62.2 mm against 76.3 mm simulated: the balls sit ~14 mm deeper than the LPA/RPA pivot assumed."] },
+  { k: "gs", no: "GS", t: "Gaussian splatting", model: "gs_stochastic_solids", figs: ["ss_compare_geometry", "dn_compare_geometry", "dn_closeup_face_ears"],
+    pts: ["Stochastic Solids (RGB only, frozen metric poses) is the best surface: clean face, ears, hair, arc and every screw.",
+          "It agrees with the photo TSDF to 0.9 mm median; on it all 12 CAD screws are confirmed and face landmarks tighten to 2.5 mm.",
+          "AGS-Mesh + LiDAR is the cleanest of the nerfstudio runs (1.4 mm to the TSDF) but loses the chin underside."] },
+  { k: "apple", no: "Apple", t: "Object Capture on the Mac", model: "apple_rgbd", figs: ["apple_comparison"],
+    pts: ["Clean, closed head and solid pins, but capped at ~30 k faces on the head and a 2 K texture: the face is over-smoothed.",
+          "LiDAR changes only its scale (colour+depth vs colour-only: 2.1 mm apart), and that scale is ~3 % too large."] },
+];
+MODELS.push({ id: "cad_frame_on_gs", name: "Step 8: CAD frame + screws on the GS mesh", grp: "Head and device", meta: "Stochastic Solids mesh with the CAD overlay switched on", step: "s8", alias: "gs_stochastic_solids", cad: true });
+
+const $ = s => document.querySelector(s);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+let ASSETS = {}, MARK = null;
+
+/* ---------- three.js bench ---------- */
+const canvas = $("#gl"), stage = $("#stage");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.localClippingEnabled = true;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 20);
+const controls = new THREE.OrbitControls(camera, canvas);
+controls.enableDamping = true; controls.dampingFactor = 0.12;
+const TARGET = new THREE.Vector3(0.02, 0.04, -0.04);   // device (0.02, 0.04, 0.04) -> GL (x, z, -y)
+controls.target.copy(TARGET);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f99, 0.85));
+const key = new THREE.DirectionalLight(0xffffff, 0.75); camera.add(key); key.position.set(0.3, 0.4, 0.2); scene.add(camera);
+const loader = new THREE.GLTFLoader();
+const cache = {};
+let current = null, shade = "colour", clipAxis = "none", clipSign = 1;
+const clipPlane = new THREE.Plane(new THREE.Vector3(1, 0, 0), 0);
+const dev = v => new THREE.Vector3(v.x, -v.z, v.y);                // GL -> device
+const gl = (x, y, z) => new THREE.Vector3(x, z, -y);               // device -> GL
+
+function resize() {
+  const r = stage.getBoundingClientRect();
+  renderer.setSize(r.width, r.height, false); camera.aspect = r.width / Math.max(r.height, 1); camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+
+function setView(name) {
+  const d = 0.62, t = TARGET.clone();
+  const dirs = { front: gl(0, 1, 0.12), back: gl(0, -1, 0.12), right: gl(1, 0.15, 0.12), left: gl(-1, 0.15, 0.12), top: gl(0, 0.05, 1) };
+  const v = dirs[name] || dirs.front; v.normalize().multiplyScalar(d);
+  camera.position.copy(t.clone().add(v)); camera.up.set(0, 1, 0); controls.target.copy(t); controls.update();
+}
+
+function styleMesh(root) {
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    if (!o.userData.base) o.userData.base = o.material;
+    let m;
+    if (shade === "colour") { m = o.userData.base.clone(); m.vertexColors = !!o.geometry.attributes.color; if (m.color) m.color.set(0xffffff); m.roughness = 0.9; m.metalness = 0; }
+    else m = new THREE.MeshStandardMaterial({ color: 0xc9c6c0, roughness: 0.85, metalness: 0, wireframe: shade === "wire", flatShading: false });
+    m.side = THREE.DoubleSide; m.clippingPlanes = clipAxis === "none" ? [] : [clipPlane];
+    o.material = m;
+  });
+}
+function loadModel(id) {
+  return new Promise((res, rej) => {
+    if (cache[id]) return res(cache[id]);
+    $("#status").textContent = "loading " + id + "…";
+    // models are published as base64 text (.glb.txt): artifacts serve only web file types
+    fetch(id + ".glb.txt").then(r => { if (!r.ok) throw new Error(r.status); return r.text(); }).then(t => {
+      const bin = atob(t.replace(/\s+/g, "")); const buf = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+      loader.parse(buf.buffer, "", g => { cache[id] = g.scene; g.scene.traverse(o => { if (o.isMesh) o.geometry.computeVertexNormals(); }); res(g.scene); }, rej);
+    }).catch(rej);
+  });
+}
+async function show(id) {
+  const M = MODELS.find(m => m.id === id) || MODELS[0];
+  document.querySelectorAll(".m").forEach(e => { const on = e.dataset.id === M.id; e.classList.toggle("on", on); e.querySelector("input").checked = on; });
+  $("#hudName").textContent = M.name;
+  const real = M.alias || M.id;
+  try {
+    const g = await loadModel(real);
+    if (current) scene.remove(current);
+    current = g; styleMesh(g); scene.add(g);
+    const a = ASSETS[real]; $("#hudMeta").textContent = M.meta + (a ? ` · ${a.faces.toLocaleString()} faces shown` : "");
+    $("#status").textContent = "drag: rotate · right-drag: pan · wheel: zoom";
+  } catch (e) { $("#status").textContent = "could not load " + real; }
+  if (M.cad) { $("#ovCad").checked = true; toggleCad(); }
+}
+
+/* overlays */
+const ovGroups = { screws: new THREE.Group(), ear: new THREE.Group(), lm: new THREE.Group(), axes: new THREE.Group() };
+Object.values(ovGroups).forEach(g => scene.add(g));
+let cadGroup = null, labels = [], selScrew = -1;
+function sphere(p, r, color) { const m = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 12), new THREE.MeshBasicMaterial({ color })); m.position.copy(p); return m; }
+function line(a, b, color) { return new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), new THREE.LineBasicMaterial({ color })); }
+function buildOverlays() {
+  const cs = new THREE.Color(css("--screw")), ce = new THREE.Color(css("--ear")), cl = new THREE.Color(css("--accent"));
+  Object.values(ovGroups).forEach(g => g.clear()); labels = [];
+  MARK.screws.forEach((s, i) => {
+    const inner = new THREE.Vector3(...s.inner), tip = new THREE.Vector3(...s.tip), out = new THREE.Vector3(...s.axis_out);
+    const g = new THREE.Group(); g.userData.i = i;
+    g.add(line(out, tip, cs)); g.add(sphere(tip, i === selScrew ? 0.0045 : 0.0028, cs)); g.add(sphere(inner, 0.0018, 0x777777));
+    ovGroups.screws.add(g);
+    labels.push({ grp: "screws", p: out.clone().lerp(inner, 0.25), cls: "scr", txt: `${s.readout} ${s.gap_mm != null ? s.gap_mm.toFixed(1) : "–"} mm`, i });
+  });
+  ["R", "L"].forEach(k => { const p = new THREE.Vector3(...MARK.ear[k]); ovGroups.ear.add(sphere(p, 0.0065, ce)); labels.push({ grp: "ear", p, cls: "ear", txt: `ear ball ${k} · |x| ${(Math.abs(p.x) * 1000).toFixed(1)} mm` }); });
+  ovGroups.ear.add(line(new THREE.Vector3(...MARK.ear.R), new THREE.Vector3(...MARK.ear.L), ce));
+  Object.entries(MARK.landmarks).forEach(([k, v]) => { const p = new THREE.Vector3(...v); ovGroups.lm.add(sphere(p, 0.002, cl)); labels.push({ grp: "lm", p, cls: "lm", txt: k.replace(/_\d+$/, "").replace(/_/g, " ") }); });
+  const L = 0.06; [[gl(L, 0, 0), 0xc0392b], [gl(0, L, 0), 0x2e8b57], [gl(0, 0, L), 0x2b5fb3]].forEach(([v, c]) => ovGroups.axes.add(line(new THREE.Vector3(), v, c)));
+  applyOverlayVisibility();
+}
+function applyOverlayVisibility() {
+  ovGroups.screws.visible = $("#ovScrews").checked; ovGroups.ear.visible = $("#ovEar").checked; ovGroups.lm.visible = $("#ovLm").checked; ovGroups.axes.visible = $("#ovAxes").checked;
+}
+async function toggleCad() {
+  if ($("#ovCad").checked) {
+    if (!cadGroup) { const g = await loadModel("cad_frame_screws"); cadGroup = g.clone(true);
+      cadGroup.traverse(o => { if (o.isMesh) o.material = new THREE.MeshStandardMaterial({ color: new THREE.Color(css("--frame")), roughness: .6, transparent: true, opacity: .55, side: THREE.DoubleSide }); }); }
+    cadGroup.traverse(o => { if (o.isMesh) o.material.clippingPlanes = clipAxis === "none" ? [] : [clipPlane]; });
+    scene.add(cadGroup);
+  } else if (cadGroup) scene.remove(cadGroup);
+}
+["#ovScrews", "#ovEar", "#ovLm", "#ovAxes"].forEach(s => $(s).addEventListener("change", applyOverlayVisibility));
+$("#ovCad").addEventListener("change", toggleCad);
+
+/* shading + clip */
+function setShade(s) { shade = s; ["#shColour", "#shClay", "#shWire"].forEach(b => $(b).classList.remove("on")); $({ colour: "#shColour", clay: "#shClay", wire: "#shWire" }[s]).classList.add("on"); if (current) styleMesh(current); }
+$("#shColour").onclick = () => setShade("colour"); $("#shClay").onclick = () => setShade("clay"); $("#shWire").onclick = () => setShade("wire");
+function updateClip() {
+  clipAxis = $("#clipAxis").value; const mm = +$("#clipPos").value;
+  const n = { x: gl(1, 0, 0), y: gl(0, 1, 0), z: gl(0, 0, 1) }[clipAxis] || new THREE.Vector3(1, 0, 0);
+  clipPlane.normal.copy(n).multiplyScalar(-clipSign); clipPlane.constant = clipSign * mm / 1000;
+  $("#clipLabel").textContent = clipAxis === "none" ? "cut off" : `${clipAxis} = ${mm} mm · keeping ${clipSign > 0 ? "−" : "+"}${clipAxis} side`;
+  if (current) styleMesh(current); if (cadGroup) cadGroup.traverse(o => { if (o.isMesh) o.material.clippingPlanes = clipAxis === "none" ? [] : [clipPlane]; });
+}
+$("#clipAxis").addEventListener("change", updateClip); $("#clipPos").addEventListener("input", updateClip);
+$("#clipFlip").onclick = () => { clipSign *= -1; updateClip(); };
+document.querySelectorAll("[data-view]").forEach(b => b.onclick = () => setView(b.dataset.view));
+
+/* measure */
+const ray = new THREE.Raycaster(); let measuring = false, mpts = [], mobj = new THREE.Group(); scene.add(mobj);
+$("#measureBtn").onclick = () => { measuring = !measuring; $("#measureBtn").classList.toggle("on", measuring); $("#status").textContent = measuring ? "click two points on the surface" : "drag: rotate · right-drag: pan · wheel: zoom"; };
+$("#measureClear").onclick = () => { mpts = []; mobj.clear(); $("#measureBox").hidden = true; };
+let down = null;
+canvas.addEventListener("pointerdown", e => { down = [e.clientX, e.clientY]; });
+canvas.addEventListener("pointerup", e => {
+  if (!measuring || !current || !down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
+  const r = canvas.getBoundingClientRect();
+  ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
+  const hit = ray.intersectObject(current, true).find(h => clipAxis === "none" || clipPlane.distanceToPoint(h.point) >= 0);
+  if (!hit) return;
+  if (mpts.length === 2) { mpts = []; mobj.clear(); }
+  mpts.push(hit.point.clone()); mobj.add(sphere(hit.point, 0.0022, new THREE.Color(css("--screw"))));
+  const f = p => { const d = dev(p).multiplyScalar(1000); return `(${d.x.toFixed(1)}, ${d.y.toFixed(1)}, ${d.z.toFixed(1)})`; };
+  const box = $("#measureBox"); box.hidden = false;
+  if (mpts.length === 1) box.textContent = `A ${f(mpts[0])} mm · click a second point`;
+  else { mobj.add(line(mpts[0], mpts[1], new THREE.Color(css("--screw")))); box.textContent = `A ${f(mpts[0])} → B ${f(mpts[1])} · distance ${(mpts[0].distanceTo(mpts[1]) * 1000).toFixed(1)} mm`; }
+});
+
+/* labels projected each frame */
+function drawLabels() {
+  const ov = $("#overlay"); const r = stage.getBoundingClientRect(); let html = "";
+  for (const l of labels) {
+    if (!ovGroups[l.grp].visible) continue;
+    if (l.grp === "lm" && labels.length > 40) continue;
+    const p = l.p.clone().project(camera); if (p.z > 1 || p.z < -1) continue;
+    const x = (p.x + 1) / 2 * r.width, y = (1 - p.y) / 2 * r.height;
+    if (x < 0 || y < 0 || x > r.width || y > r.height) continue;
+    const sel = l.i === selScrew ? ' style="border-width:2px"' : "";
+    html += `<span class="tag ${l.cls}"${sel} style="left:${x}px;top:${y}px">${l.txt}</span>`;
+  }
+  ov.innerHTML = html;
+}
+let frame = 0;
+function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); if ((frame++ & 1) === 0) drawLabels(); }
+
+/* ---------- model list ---------- */
+function buildModelList() {
+  const host = $("#models"); let grp = "";
+  MODELS.forEach(m => {
+    if (m.grp !== grp) { grp = m.grp; const h = document.createElement("span"); h.className = "lab"; h.style.marginTop = "6px"; h.textContent = grp; host.appendChild(h); }
+    const a = ASSETS[m.alias || m.id];
+    const el = document.createElement("div"); el.className = "m"; el.dataset.id = m.id; el.tabIndex = 0; el.setAttribute("role", "radio");
+    el.innerHTML = `<input type="radio" name="model" tabindex="-1"><span>${m.name}${m.best ? '<span class="best">best</span>' : ""}</span><span class="fc">${a ? Math.round(a.faces / 1000) + "k" : ""}</span>`;
+    el.onclick = () => show(m.id); el.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); show(m.id); } };
+    host.appendChild(el);
+  });
+}
+
+/* ---------- readouts ---------- */
+let R = null, series = { sim: true, meas: true, hair: true };
+function chart() {
+  const svg = $("#chart"), W = 760, H = 300, L = 40, B = 34, T = 14, n = R.readouts.length, maxV = 65;
+  const bw = (W - L - 10) / n, y = v => T + (H - T - B) * (1 - v / maxV);
+  let s = "";
+  for (let v = 0; v <= 60; v += 10) s += `<line x1="${L}" x2="${W - 6}" y1="${y(v)}" y2="${y(v)}" stroke="${css("--rule")}" stroke-width="1"/><text x="${L - 6}" y="${y(v) + 3.5}" text-anchor="end">${v}</text>`;
+  s += `<text x="8" y="${T + 4}" text-anchor="start">mm</text>`;
+  const keys = [["sim", "sim_gap", css("--sim")], ["meas", "gap_fine", css("--accent")], ["hair", "hair_surface_gap", css("--hair")]].filter(k => series[k[0]]);
+  const w = (bw - 8) / Math.max(keys.length, 1);
+  R.readouts.forEach((r, i) => {
+    const x0 = L + i * bw + 4;
+    if (i === selScrew) s += `<rect x="${x0 - 3}" y="${T - 4}" width="${bw - 2}" height="${H - T - B + 8}" fill="${css("--accent-soft")}"/>`;
+    keys.forEach(([k, f, c], j) => { const v = r[f]; if (v == null) return; const vv = Math.max(v, 0); s += `<rect x="${x0 + j * w}" y="${y(vv)}" width="${w - 1}" height="${Math.max(y(0) - y(vv), 0.5)}" fill="${c}"><title>${r.readout} ${k}: ${v.toFixed(1)} mm</title></rect>`; });
+    if (series.meas && r.gap_fine != null) s += `<text x="${x0 + (bw - 8) / 2}" y="${y(Math.max(r.gap_fine, 0)) - 4}" text-anchor="middle" style="fill:${css("--ink")}">${r.gap_fine.toFixed(1)}</text>`;
+    s += `<text x="${x0 + (bw - 8) / 2}" y="${H - B + 16}" text-anchor="middle">${r.readout}</text>`;
+    s += `<rect x="${x0 - 3}" y="${T - 4}" width="${bw - 2}" height="${H - T - B + 24}" fill="transparent" data-i="${i}" style="cursor:pointer"/>`;
+  });
+  svg.innerHTML = s;
+  svg.querySelectorAll("[data-i]").forEach(el => el.addEventListener("click", () => selectScrew(+el.dataset.i)));
+}
+function table() {
+  const tb = $("#rtable tbody"); const f = v => v == null ? "–" : v.toFixed(1);
+  tb.innerHTML = R.readouts.map((r, i) => {
+    const c = r.cad_screw_vs_mesh_mm; const cc = c ? `${f(c.wing)} / ${f(c.shaft_outside)}` : "–";
+    const d = r.gap_fine != null ? r.gap_fine - r.sim_gap : null;
+    return `<tr data-i="${i}" class="${i === selScrew ? "sel" : ""}"><td>${r.readout}</td><td class="mono">${r.hole}</td><td class="mono">${f(r.sim_gap)}</td><td class="mono">${f(r.gap_coarse)}</td><td class="mono ${d != null && Math.abs(d) > 8 ? "flag" : ""}">${f(r.gap_fine)}</td><td class="mono">${r.psi_deg != null ? r.psi_deg.toFixed(0) + "°" : "–"}</td><td class="mono">${f(r.hair_surface_gap)}</td><td class="mono">${cc}</td></tr>`;
+  }).join("");
+  tb.querySelectorAll("tr").forEach(tr => tr.addEventListener("click", () => selectScrew(+tr.dataset.i)));
+}
+function selectScrew(i) {
+  selScrew = i; chart(); table(); buildOverlays();
+  const s = MARK.screws[i]; const tip = new THREE.Vector3(...s.tip), out = new THREE.Vector3(...s.axis_out);
+  const dir = out.clone().sub(tip).normalize();
+  controls.target.copy(tip); camera.position.copy(tip.clone().add(dir.multiplyScalar(0.25)).add(new THREE.Vector3(0.12, 0.06, 0.12))); controls.update();
+  $("#bench").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+}
+document.querySelectorAll("#legend input").forEach(c => c.addEventListener("change", () => { series[c.dataset.s] = c.checked; chart(); }));
+function alignBox() {
+  const a = R.alignment; const f = (v, d = 1) => v.toFixed(d);
+  const rows = [
+    ["Ear half-width (printed ball)", `${f(a.ear_halfwidth_mm)} mm`, `sim 76.3`],
+    ["Ear balls, right / left |x|", `${f(a.ear_ball_ring_R_mm[0])} / ${f(-a.ear_ball_ring_L_mm[0])} mm`, ""],
+    ["Face midline vs frame centre", `${f(a.face_midline_x_mm)} mm`, "x"],
+    ["Yaw / roll of the face", `${f(a.face_midline_yaw_deg)}° / ${f(a.face_midline_roll_deg)}°`, ""],
+    ["Nasion in front of the ear axis", `${f(a.N_y_mm)} mm`, "phone scan 112.8"],
+    ["Pitch (nose up +)", `${f(a.pitch_deg)}°`, "sim +0.3"],
+  ];
+  $("#align").innerHTML = rows.map(([k, v, n]) => `<dt>${k}${n ? ` <span class="lab" style="font-size:10px">${n}</span>` : ""}</dt><dd>${v}</dd>`).join("");
+}
+
+/* ---------- steps + gallery ---------- */
+function figSrc(id) { return "fig/" + id + ".jpg"; }
+function openLb(id) { const f = FIGS.find(x => x[0] === id); $("#lbImg").src = figSrc(id); $("#lbImg").alt = f ? f[1] : id; $("#lbCap").textContent = f ? f[1] : id; $("#lb").hidden = false; }
+$("#lb").onclick = () => { $("#lb").hidden = true; };
+document.addEventListener("keydown", e => { if (e.key === "Escape") $("#lb").hidden = true; });
+function buildSteps() {
+  $("#steplist").innerHTML = STEPS.map(s => `<div class="step"><div class="no">${s.no}<small>${s.k === "gs" ? "parallel run" : s.k === "apple" ? "local comparison" : "pipeline"}</small></div>
+    <div><h3>${s.t}</h3><ul>${s.pts.map(p => `<li>${p}</li>`).join("")}</ul></div>
+    <div class="side"><div class="thumbs">${s.figs.map(f => `<button data-fig="${f}" aria-label="Enlarge figure"><img loading="lazy" src="${figSrc(f)}" alt=""></button>`).join("")}</div>
+    <button class="go" data-model="${s.model}">Show in the 3-D bench</button></div></div>`).join("");
+  document.querySelectorAll("[data-fig]").forEach(b => b.onclick = () => openLb(b.dataset.fig));
+  document.querySelectorAll("[data-model]").forEach(b => b.onclick = () => { show(b.dataset.model); $("#bench").scrollIntoView({ block: "start" }); });
+  $("#gal").innerHTML = FIGS.map(([id, cap]) => `<figure><button data-g="${id}" aria-label="Enlarge: ${cap}"><img loading="lazy" src="${figSrc(id)}" alt="${cap}"></button><figcaption>${cap}</figcaption></figure>`).join("");
+  document.querySelectorAll("[data-g]").forEach(b => b.onclick = () => openLb(b.dataset.g));
+}
+
+/* ---------- boot ---------- */
+(async () => {
+  buildSteps();
+  try {
+    const [a, m, r] = await Promise.all(["assets.json", "markers.json", "step8_readouts.json"].map(u => fetch(u).then(x => x.json())));
+    ASSETS = a.assets; MARK = m; R = r;
+  } catch (e) { $("#status").textContent = "could not load the data files"; }
+  buildModelList(); resize(); setView("front");
+  if (MARK) buildOverlays(); if (R) { chart(); table(); alignBox(); }
+  loop();
+  const hash = location.hash.replace("#", ""); show(MODELS.find(m => m.id === hash) ? hash : "gs_stochastic_solids");
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (MARK) buildOverlays(); if (R) chart(); });
+})();
+</script>
