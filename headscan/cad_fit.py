@@ -12,6 +12,10 @@ A fit is a transform T: CAD (nominal device frame) -> scene. Variants:
   G_mixs  tags + shape, one similarity (scale check)
   P_mix   tags + shape, part A and part B separately (rigid); P_mixs the same with free scale per part
   L_mix   per screw: tags + shape of the screw's own part within 70 mm of its hole (rigid)
+  S_mix   part A rigid + part B split into rigid segments (right arch + barrel x > 25 mm, left arch + barrel
+          x < -25 mm, apex block |x| <= 25 mm), each by its own tags + shape, started from the part-B fit
+Calibration (--ruler): gap = phase + 2.5 n with two constants from the ruler, b (coarse bias, picks the turn n)
+and phi (thread-phase offset); judged leave-one-out (each screw predicted with b, phi from the other 11).
 Shape term: point-to-plane on CAD surface samples whose nearest mesh point is within 5 mm, best 80 % kept.
 Screw readouts per variant: screw pose from its wing-tag corners (Kabsch, stickers off the axis by > 10 deg dropped),
 hole axis taken from the variant's transform; gap_coarse = s + 74 mm; fine = wing angle psi from the hole-thread
@@ -180,6 +184,23 @@ def main():
         S = samp[p][np.linalg.norm(samp[p] - o, axis=1) < 70]
         local[k] = solve(V[f"P_mix_{p}"], Pc[m], Qm[m], S, tree, tgtN, tgtX)
 
+    # part B in rigid segments
+    def seg_of(pts):
+        x = np.asarray(pts)[:, 0]
+        return np.where(x > 25, "R", np.where(x < -25, "L", "C"))
+    segP = seg_of(Pc); segS = seg_of(samp["B"]); SEG = {}
+    for g in "RLC":
+        m = (prt == "B") & (segP == g)
+        SEG[g] = solve(V["P_mix_B"], Pc[m], Qm[m], samp["B"][segS == g], tree, tgtN, tgtX) if m.sum() >= 4 else V["P_mix_B"]
+    seg_tags = {g: sorted({int(i) // 4 for i in ids[(prt == "B") & (segP == g)]}) for g in "RLC"}
+    def T_seg_of(p, pt):
+        return V["P_mix_A"] if p == "A" else SEG[str(seg_of(np.asarray(pt, float).reshape(-1, 3))[0])]
+    def rel_angle(Ta, Tb):
+        Rr = (np.linalg.inv(Ta) @ Tb)[:3, :3]; return float(np.degrees(np.arccos(np.clip((np.trace(Rr) - 1) / 2, -1, 1))))
+    bend = {f"{g}_vs_C": rel_angle(SEG["C"], SEG[g]) for g in "RL"}
+    bend["R_vs_L"] = rel_angle(SEG["R"], SEG["L"])
+    print("part-B segments, tags:", seg_tags, " bending (deg):", {k: round(v, 2) for k, v in bend.items()})
+
     ruler = [float(v) for v in a.ruler.split(",")] if a.ruler else None
 
     def readouts(Tfor_hole):
@@ -208,6 +229,12 @@ def main():
     for name, Tof in fits.items():
         variants[name] = {"scale": {p: tscale(Tof(p)) for p in "AB"}, "tag_res_mm": per_tag_res(Tof), "icp": icp_dist(Tof),
                           "readouts": readouts(lambda k, Tof=Tof: Tof(holes[k]["part"]))}
+    seg_res = {}
+    for i, c, p in tags:
+        seg_res.setdefault(i // 4, []).append(float(np.linalg.norm(apply(T_seg_of(p, c[None]), c[None])[0] - X[i])))
+    variants["S_mix"] = {"scale": {"A": 1.0, "B": 1.0}, "tag_res_mm": {t: float(np.mean(v)) for t, v in seg_res.items()}, "icp": None,
+                         "readouts": readouts(lambda k: T_seg_of(holes[k]["part"], np.array(holes[k]["origin"])[None])),
+                         "segments": seg_tags, "bend_deg": bend}
     variants["L_mix"] = {"scale": {"A": 1.0, "B": 1.0}, "tag_res_mm": None, "icp": None, "readouts": readouts(lambda k: local[k])}
     # joint between the parts: B relative to A after the per-part fit
     TA, TB = V["P_mix_A"], V["P_mix_B"]; Rel = np.linalg.inv(TA) @ TB
@@ -228,7 +255,29 @@ def main():
                 row[f"{kind}_mae"] = float(np.nanmean(np.abs(e))); row[f"{kind}_bias"] = float(np.nanmedian(e))
                 row[f"{kind}_max"] = float(np.nanmax(np.abs(e)))
         summary[name] = row
-    json.dump({"variants": variants, "summary": summary, "joint_B_rel_A": joint, "ruler": ruler,
+    # calibration: b (coarse bias) and phi (phase offset), leave-one-out
+    calib = {}
+    if ruler:
+        g = np.array(ruler)
+        for name, v in variants.items():
+            rs = v["readouts"]
+            if any(r is None for r in rs):
+                continue
+            co = np.array([r["coarse"] for r in rs]); ph = np.array([r["fine"] for r in rs])
+            def predict(tr, te):
+                b = np.median(co[tr] - g[tr])
+                w = ((ph[tr] - g[tr] + P / 2) % P) - P / 2; phi = np.median(w)
+                f = ph[te] - phi; n = np.round(((co[te] - b) - f) / P)
+                return f + n * P, b, phi
+            loo = np.array([predict(np.delete(np.arange(12), i), np.array([i]))[0][0] for i in range(12)])
+            full, b, phi = predict(np.arange(12), np.arange(12))
+            calib[name] = {"b_mm": float(b), "phi_mm": float(phi), "loo_err": (loo - g).round(2).tolist(),
+                           "loo_mae": float(np.mean(np.abs(loo - g))), "loo_max": float(np.max(np.abs(loo - g))),
+                           "in_sample_mae": float(np.mean(np.abs(full - g))), "calibrated_mm": full.round(2).tolist()}
+        print(f"{'variant':8} {'b':>6} {'phi':>6} {'LOO MAE':>8} {'LOO max':>8} {'in-sample':>9}")
+        for n_, c in calib.items():
+            print(f"{n_:8} {c['b_mm']:6.2f} {c['phi_mm']:6.2f} {c['loo_mae']:8.2f} {c['loo_max']:8.2f} {c['in_sample_mae']:9.2f}   {c['loo_err']}")
+    json.dump({"variants": variants, "summary": summary, "calibration": calib, "segments": {"tags": seg_tags, "bend_deg": bend, "T": {g: SEG[g].tolist() for g in SEG}}, "joint_B_rel_A": joint, "ruler": ruler,
                "transforms": {k: v.tolist() for k, v in V.items()}, "local": {str(k): v.tolist() for k, v in local.items()}},
               open(O / "cad_fit.json", "w"), indent=1)
     print(f"joint B relative to A after the per-part fit: rotation {ang:.2f} deg, translation {np.round(Rel[:3, 3], 2).tolist()} mm")

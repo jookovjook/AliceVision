@@ -209,7 +209,7 @@ footer { color: var(--ink-2); font-size: 12.5px; border-top: 1px solid var(--rul
     <div class="card"><img src="fig/cadfit_ruler.jpg" alt="Screw gaps vs ruler for global, per-part and local fits"></div>
     <div class="card"><img src="fig/cadfit_tags.jpg" alt="Frame tag residuals, one rigid fit vs per part"></div>
   </div>
-  <div class="card table-wrap"><table id="cadtable"><thead><tr><th>Fit</th><th>Scale A</th><th>Scale B</th><th>Tag residual RMS</th><th>Shape distance A / B</th><th>Coarse bias</th><th>Fine vs ruler: mean / max</th></tr></thead><tbody></tbody></table></div>
+  <div class="card table-wrap"><table id="cadtable"><thead><tr><th>Fit</th><th>Scale A</th><th>Scale B</th><th>Tag residual RMS</th><th>Shape distance A / B</th><th>Coarse bias</th><th>Fine vs ruler: mean / max</th><th>Calibrated, leave-one-out</th></tr></thead><tbody></tbody></table></div>
   <p class="note" id="cadnote"></p>
 </section>
 
@@ -296,7 +296,8 @@ const STEPS = [
     pts: ["Part A (nose + sagittal arc) is rigid: its tags fit the CAD at 0.3–0.4 mm once A is fitted on its own; it reads 0.4 % small (PLA shrinkage).",
           "Part B (coronal arch) bends: tags 7, 13, 10, 12 stay 1.4–2.6 mm off; B sits 1.3° and ~3 mm off A at the joint.",
           "Fitting the parts separately removes every wrong-turn screw reading: fine gaps vs ruler 0.68 mm mean, 1.56 mm max (was 1.52 / 3.65).",
-          "All remaining errors are positive (+0.05 to +1.6 mm): a constant offset still to calibrate."] },
+          "Part B in 3 rigid segments (right arch, apex block, left arch): every tag within 0.3–0.7 mm; the arch bends 2.6° end to end.",
+          "Calibrating 2 constants (coarse bias ~1 mm, thread phase 0.45 mm) gives 0.39 mm mean, 1.41 mm max, scored leave-one-out; 9 of 12 within ±0.45 mm."] },
   { k: "gs", no: "GS", t: "Gaussian splatting", model: "gs_stochastic_solids", figs: ["ss_compare_geometry", "dn_compare_geometry", "dn_closeup_face_ears"],
     pts: ["Stochastic Solids (RGB only, frozen metric poses) is the best surface: clean face, ears, hair, arc and every screw.",
           "It agrees with the photo TSDF to 0.9 mm median; on it all 12 CAD screws are confirmed and face landmarks tighten to 2.5 mm.",
@@ -308,6 +309,8 @@ const STEPS = [
 MODELS.splice(1, 0,
   { id: "cadfit_per_part", name: "CAD fit: parts A and B separately", grp: "CAD fit", heat: true,
     meta: "frame CAD placed by tags + shape, coloured by distance to the reconstruction", step: "cad" },
+  { id: "cadfit_segments", name: "CAD fit: part B in 3 segments", grp: "CAD fit", heat: true,
+    meta: "part A rigid, part B as right arch / apex block / left arch, coloured by distance to the reconstruction", step: "cad" },
   { id: "cadfit_global_tags", name: "CAD fit: one global fit by tags", grp: "CAD fit", heat: true,
     meta: "the step-4 placement, coloured by distance to the reconstruction", step: "cad" });
 MODELS.push({ id: "cad_frame_on_gs", name: "Step 8: CAD frame + screws on the GS mesh", grp: "Head and device", meta: "Stochastic Solids mesh with the CAD overlay switched on", step: "s8", alias: "gs_stochastic_solids", cad: true });
@@ -557,14 +560,16 @@ function buildSteps() {
 
 function cadTable(C) {
   const lab = { G_sim: "Global, tags (step 4)", G_rig: "Global, tags, CAD scale", G_icp: "Global, shape only", G_mix: "Global, tags + shape",
-    G_mixs: "Global, tags + shape, free scale", P_mix: "Per part, tags + shape", P_mixs: "Per part, free scale", L_mix: "Local, per screw" };
+    G_mixs: "Global, tags + shape, free scale", P_mix: "Per part, tags + shape", P_mixs: "Per part, free scale", S_mix: "Part B in 3 segments", L_mix: "Local, per screw" };
   const f = (v, d = 2) => v == null || isNaN(v) ? "–" : v.toFixed(d);
-  $("#cadtable tbody").innerHTML = Object.entries(C.summary).map(([k, r]) => `<tr${k === "P_mixs" ? ' class="sel"' : ""}><td>${lab[k] || k}</td>
+  $("#cadtable tbody").innerHTML = Object.entries(C.summary).map(([k, r]) => `<tr${k === "S_mix" ? ' class="sel"' : ""}><td>${lab[k] || k}</td>
     <td class="mono">${f(r.scale.A, 4)}</td><td class="mono">${f(r.scale.B, 4)}</td><td class="mono">${r.tag_res_rms_mm != null ? f(r.tag_res_rms_mm) + " mm" : "–"}</td>
     <td class="mono">${r.icp_median_mm ? f(r.icp_median_mm.A) + " / " + f(r.icp_median_mm.B) + " mm" : "–"}</td><td class="mono">${f(r.coarse_bias)} mm</td>
-    <td class="mono ${r.fine_max > 2 ? "flag" : "good"}">${f(r.fine_mae)} / ${f(r.fine_max)} mm</td></tr>`).join("");
+    <td class="mono ${r.fine_max > 2 ? "flag" : "good"}">${f(r.fine_mae)} / ${f(r.fine_max)} mm</td>
+    <td class="mono">${C.calibration && C.calibration[k] ? f(C.calibration[k].loo_mae) + " / " + f(C.calibration[k].loo_max) + " mm" : "–"}</td></tr>`).join("");
   const j = C.joint_B_rel_A;
-  $("#cadnote").textContent = `Part B relative to part A after the per-part fit: ${j.rotation_deg.toFixed(2)}° rotation, (${j.translation_mm.map(v => v.toFixed(1)).join(", ")}) mm shift. CAD-to-mesh median distance: part A ${C.heatmap.per_part.A.median_mm.toFixed(2)} mm per part (${C.heatmap.global_tags.A.median_mm.toFixed(2)} global), part B ${C.heatmap.per_part.B.median_mm.toFixed(2)} mm.`;
+  const sb = C.segments ? ` Part B segments bend ${C.segments.bend_deg.R_vs_C.toFixed(1)}° (right vs apex) and ${C.segments.bend_deg.L_vs_C.toFixed(1)}° (left vs apex). Calibration: 2 constants (coarse bias ${C.calibration.S_mix.b_mm.toFixed(2)} mm, thread phase ${C.calibration.S_mix.phi_mm.toFixed(2)} mm) estimated from the ruler; each screw is scored with constants from the other 11.` : "";
+  $("#cadnote").textContent = `Part B relative to part A after the per-part fit: ${j.rotation_deg.toFixed(2)}° rotation, (${j.translation_mm.map(v => v.toFixed(1)).join(", ")}) mm shift. CAD-to-mesh median distance: part A ${C.heatmap.per_part.A.median_mm.toFixed(2)} mm per part (${C.heatmap.global_tags.A.median_mm.toFixed(2)} global), part B ${C.heatmap.per_part.B.median_mm.toFixed(2)} mm per part, ${C.heatmap.segments.B.median_mm.toFixed(2)} mm in segments.` + sb;
 }
 
 /* ---------- boot ---------- */
