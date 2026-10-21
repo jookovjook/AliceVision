@@ -10,7 +10,7 @@
 set -euo pipefail
 NAME=$1; EXPORT=$2; REF=$3; ROOT=$4
 ITERS=${ITERS:-7000}; RES=${RES:-1}; SCALE=${SCALE:-1}
-LO=${LO:-"-0.26 -0.22 -0.20"}; HI=${HI:-"0.26 0.30 0.28"}
+LO=${LO:-"-0.26 -0.22 -0.16"}; HI=${HI:-"0.26 0.30 0.28"}
 CENTER=${CENTER:-"0.02 0.04 0.04"}; HALF=${HALF:-0.22}
 HS=/workspace/AliceVision/headscan; PY=/workspace/hsvenv/bin/python
 CONDA=${CONDA:-/workspace/miniforge}; REPO=${REPO:-/workspace/src/gsss}

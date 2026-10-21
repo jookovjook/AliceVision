@@ -5,9 +5,10 @@ Solids run on the frame and what it holds (head / table top) only.
         [--init lidar|sfm|both] [--voxel 0.002] [--dilate 24]
 
 Box corners in device metres (the export may be scaled: --scale = its units per metre, export_check.json).
-Mask per view: pixels whose LiDAR depth (EXPORT/depth, z x scale in mm) back-projects into the box, closed, holes
-filled and dilated by --dilate px (LiDAR is low-res and confidence-2 only); everything else is set to black, the
-trainer's background, so no Gaussians are spent on the room. Initial points: in-box LiDAR points of every view,
+Mask per view: pixels whose ray crosses the box, minus those whose LiDAR depth (EXPORT/depth, z x scale in mm)
+lands outside the box (room, shoulders), opened and dilated by --dilate px (LiDAR is low-res and confidence-2 only, so
+pixels without depth are kept); everything else is set to black, the trainer's background, so no Gaussians are spent
+on the room. Initial points: in-box LiDAR points of every view,
 voxel-downsampled (--voxel metres), coloured from the image (--init lidar), or the export's SfM points in the box
 (sfm), or both. Writes OUT_DIR/images, OUT_DIR/sparse/0/{cameras,images,points3D}.txt and box_dataset.json.
 """
@@ -44,6 +45,7 @@ def main():
     ap.add_argument("--init", choices=["lidar", "sfm", "both"], default="lidar")
     ap.add_argument("--voxel", type=float, default=0.002); ap.add_argument("--dilate", type=int, default=24)
     ap.add_argument("--max-points", type=int, default=300000)
+    ap.add_argument("--capture", default=None, help="Stray capture: mask with its raw LiDAR (all confidences)")
     a = ap.parse_args()
     t0 = time.time()
     E, O = Path(a.export), Path(a.out)
@@ -64,9 +66,24 @@ def main():
         if a.no_mask:
             m = np.ones((H, W), bool)
         else:
-            m = cv2.morphologyEx(inb.astype(np.uint8), cv2.MORPH_CLOSE, k)
-            ff = np.pad(m, 1); cv2.floodFill(ff, None, (0, 0), 1)   # background reachable from the image border
-            m = cv2.dilate(m | (ff[1:-1, 1:-1] == 0).astype(np.uint8), kd).astype(bool)   # + enclosed holes, then dilate
+            # keep a pixel when its ray crosses the box, unless LiDAR puts the surface it sees outside the box
+            # (room behind, shoulders below); pixels without LiDAR (hair, thin frame parts) are kept
+            d = ray @ R; o = -R.T @ t
+            with np.errstate(divide="ignore", invalid="ignore"):
+                t1, t2 = (lo - o) / d, (hi - o) / d
+            tn = np.nanmax(np.minimum(t1, t2), -1); tf = np.nanmin(np.maximum(t1, t2), -1)
+            hit = (tf > np.maximum(tn, 0))
+            zo, io = z, inb
+            if a.capture:   # raw LiDAR, every confidence, nearest sample (distortion ignored: the mask is dilated anyway)
+                zr = cv2.imread(str(Path(a.capture) / "depth" / name), -1).astype(np.float32) / 1000.0 * s
+                zo = zr[np.clip(((v + (1440 - H) / 2) * zr.shape[0] / 1440).astype(int), 0, zr.shape[0] - 1),
+                        np.clip(((u + (1920 - W) / 2) * zr.shape[1] / 1920).astype(int), 0, zr.shape[1] - 1)]
+                Xo = (ray * zo[..., None]) @ R + (-R.T @ t)
+                io = np.all((Xo >= lo) & (Xo <= hi), -1)
+            outside = cv2.morphologyEx(((zo > 0) & ~io).astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+            m = (hit & (outside == 0)).astype(np.uint8)
+            m = cv2.morphologyEx(m, cv2.MORPH_OPEN, k)                          # drop specks left between LiDAR samples
+            m = (cv2.dilate(m, kd) > 0) & hit
         out = img * m[..., None]
         cv2.imwrite(str(O / "images" / name), out)
         kept.append(float(m.mean()))
