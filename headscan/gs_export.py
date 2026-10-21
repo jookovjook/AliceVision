@@ -125,7 +125,7 @@ def main():
                        "transform_matrix": (c2w @ np.diag([1, -1, -1, 1])).tolist(), "colmap_im_id": n, "frame": fr})
     # landmarks with colours from their first observing view
     pts, by_view = [], {}
-    for l in d["structure"]:
+    for l in d.get("structure", []):   # tag-only poses (tag_poses.py) have no landmarks
         X = np.array([float(x) for x in l["X"]])
         obs = [o for o in l["observations"] if o["observationId"] in V]
         if len(obs) < 2:
@@ -149,7 +149,7 @@ def main():
             fx, fy, cx, cy, k = Kc
             xu = undistort_pts(np.array([[(float(o["x"][0]) - cx) / fx, (float(o["x"][1]) - cy) / fy]]), k)[0]
             errs.append(np.linalg.norm(f * xu + [cxn, cyn] - proj))
-    errs = np.array(errs)
+    errs = np.array(errs) if errs else np.full(1, np.nan)
     pts_txt = []
     with open(out / "points3D.ply", "w") as fp:
         fp.write(f"ply\nformat ascii 1.0\nelement vertex {len(pts)}\nproperty float x\nproperty float y\nproperty float z\n"
