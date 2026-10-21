@@ -52,6 +52,10 @@ section { display: flex; flex-direction: column; gap: 14px }
 .hud { position: absolute; left: 12px; top: 12px; display: flex; flex-direction: column; gap: 4px; max-width: calc(100% - 24px); pointer-events: none }
 .hud .name { font-family: var(--display); font-size: 18px; font-weight: 600; background: var(--sheet); padding: 2px 8px; border-left: 3px solid var(--accent); align-self: flex-start }
 .hud .meta { font-family: var(--mono); font-size: 11px; color: var(--ink-2); background: var(--sheet); padding: 2px 8px; align-self: flex-start }
+.heatbar { display: inline-block; width: 90px; height: 9px; vertical-align: middle; margin-right: 6px; background: linear-gradient(90deg, rgb(40,90,200), rgb(245,245,245), rgb(200,50,40)) }
+.cadgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px }
+@media (max-width: 960px) { .cadgrid { grid-template-columns: minmax(0, 1fr) } }
+.cadgrid img { width: 100%; display: block; background: #fff; max-width: 100% }
 .status { position: absolute; right: 12px; bottom: 12px; font-family: var(--mono); font-size: 11px; color: var(--ink-2); background: var(--sheet); padding: 3px 8px; border: 1px solid var(--rule) }
 .measure-box { position: absolute; left: 12px; bottom: 12px; font-family: var(--mono); font-size: 12px; background: var(--sheet); border: 1px solid var(--screw); padding: 6px 10px; max-width: calc(100% - 24px) }
 .panel { border-left: 1px solid var(--rule); padding: 14px; display: flex; flex-direction: column; gap: 16px; max-height: 760px; overflow: auto }
@@ -128,7 +132,7 @@ footer { color: var(--ink-2); font-size: 12.5px; border-top: 1px solid var(--rul
     <h1>Head Arc Scan Lab</h1>
     <p>Every reconstruction of the head with the AprilTag frame, in one metric <em>device frame</em> (origin at the ear-axis midpoint, x to the wearer's right, y forward, z up). Rotate, cut and measure; then compare the 13 frame readouts with the simulation.</p>
   </div>
-  <nav aria-label="Sections"><a href="#bench">3-D bench</a><a href="#readouts">Readouts</a><a href="#steps">Step log</a><a href="#gallery">Figures</a></nav>
+  <nav aria-label="Sections"><a href="#bench">3-D bench</a><a href="#readouts">Readouts</a><a href="#cadfit">CAD fit</a><a href="#steps">Step log</a><a href="#gallery">Figures</a></nav>
 </header>
 
 <section id="bench">
@@ -136,7 +140,7 @@ footer { color: var(--ink-2); font-size: 12.5px; border-top: 1px solid var(--rul
     <div class="stage" id="stage">
       <canvas id="gl" aria-label="3-D viewer"></canvas>
       <div class="overlay" id="overlay"></div>
-      <div class="hud"><span class="name" id="hudName">Loading…</span><span class="meta" id="hudMeta"></span></div>
+      <div class="hud"><span class="name" id="hudName">Loading…</span><span class="meta" id="hudMeta"></span><span class="meta" id="heatLegend" hidden><span class="heatbar"></span> 0 · 2.5 · 5 mm to the mesh · grey: not reconstructed</span></div>
       <div class="measure-box" id="measureBox" hidden></div>
       <div class="status" id="status">drag: rotate · right-drag: pan · wheel: zoom</div>
     </div>
@@ -199,6 +203,16 @@ footer { color: var(--ink-2); font-size: 12.5px; border-top: 1px solid var(--rul
   <div class="card table-wrap"><table id="rtable"><thead><tr><th>Readout</th><th>Hole</th><th>Sim</th><th>Tags, coarse</th><th>Tags, fine</th><th>Wing angle ψ</th><th>Hair surface</th><th>CAD screw vs mesh: wing / shaft</th></tr></thead><tbody></tbody></table></div>
 </section>
 
+<section id="cadfit">
+  <div class="sec-head"><h2>CAD fit, piece by piece</h2><p>The frame CAD placed onto the reconstruction by its tags, by its shape, and by both, first as one rigid body and then part by part. Pick a "CAD fit" model above to see where it sits on the mesh.</p></div>
+  <div class="cadgrid">
+    <div class="card"><img src="fig/cadfit_ruler.jpg" alt="Screw gaps vs ruler for global, per-part and local fits"></div>
+    <div class="card"><img src="fig/cadfit_tags.jpg" alt="Frame tag residuals, one rigid fit vs per part"></div>
+  </div>
+  <div class="card table-wrap"><table id="cadtable"><thead><tr><th>Fit</th><th>Scale A</th><th>Scale B</th><th>Tag residual RMS</th><th>Shape distance A / B</th><th>Coarse bias</th><th>Fine vs ruler: mean / max</th></tr></thead><tbody></tbody></table></div>
+  <p class="note" id="cadnote"></p>
+</section>
+
 <section id="steps">
   <div class="sec-head"><h2>Step log</h2><p>What each step added, what it found, and the model to look at.</p></div>
   <div class="steps" id="steplist"></div>
@@ -246,6 +260,7 @@ const FIGS = [
   ["step7_labels", "Steps 6–7 on the Stochastic Solids mesh"], ["step8_readouts", "Step 8: the 13 readouts vs simulation"],
   ["step8_screws_check", "Step 8: CAD screws at the read depths vs reconstruction"], ["ss_compare_geometry", "GS: Stochastic Solids vs the photo TSDF"],
   ["dn_compare_geometry", "GS: DN-Splatter, AGS-Mesh, splatfacto vs the photo TSDF"], ["dn_closeup_face_ears", "GS: face and ear close-ups (DN-Splatter runs)"],
+  ["cadfit_ruler", "Step 9: screw gaps vs ruler, global vs per-part vs local CAD fit"], ["cadfit_tags", "Step 9: frame tag residuals, one rigid fit vs per part"],
   ["dn_splat_renders", "GS: splat renders next to the input frames"], ["apple_comparison", "Apple Object Capture vs AliceVision steps 1–2"],
 ];
 const STEPS = [
@@ -277,6 +292,11 @@ const STEPS = [
     pts: ["All 12 screw gaps read from the wing tags; CAD screws placed at those depths match the mesh (wings 0.4–2.1 mm).",
           "Front gaps 4–8 mm and back gaps 37–59 mm, against 19–24 and 27–38 mm in the simulation.",
           "Ear half-width 62.2 mm against 76.3 mm simulated: the balls sit ~14 mm deeper than the LPA/RPA pivot assumed."] },
+  { k: "cad", no: "Step 9", t: "Piecewise CAD fit", model: "cadfit_per_part", figs: ["cadfit_ruler", "cadfit_tags"],
+    pts: ["Part A (nose + sagittal arc) is rigid: its tags fit the CAD at 0.3–0.4 mm once A is fitted on its own; it reads 0.4 % small (PLA shrinkage).",
+          "Part B (coronal arch) bends: tags 7, 13, 10, 12 stay 1.4–2.6 mm off; B sits 1.3° and ~3 mm off A at the joint.",
+          "Fitting the parts separately removes every wrong-turn screw reading: fine gaps vs ruler 0.68 mm mean, 1.56 mm max (was 1.52 / 3.65).",
+          "All remaining errors are positive (+0.05 to +1.6 mm): a constant offset still to calibrate."] },
   { k: "gs", no: "GS", t: "Gaussian splatting", model: "gs_stochastic_solids", figs: ["ss_compare_geometry", "dn_compare_geometry", "dn_closeup_face_ears"],
     pts: ["Stochastic Solids (RGB only, frozen metric poses) is the best surface: clean face, ears, hair, arc and every screw.",
           "It agrees with the photo TSDF to 0.9 mm median; on it all 12 CAD screws are confirmed and face landmarks tighten to 2.5 mm.",
@@ -285,6 +305,11 @@ const STEPS = [
     pts: ["Clean, closed head and solid pins, but capped at ~30 k faces on the head and a 2 K texture: the face is over-smoothed.",
           "LiDAR changes only its scale (colour+depth vs colour-only: 2.1 mm apart), and that scale is ~3 % too large."] },
 ];
+MODELS.splice(1, 0,
+  { id: "cadfit_per_part", name: "CAD fit: parts A and B separately", grp: "CAD fit", heat: true,
+    meta: "frame CAD placed by tags + shape, coloured by distance to the reconstruction", step: "cad" },
+  { id: "cadfit_global_tags", name: "CAD fit: one global fit by tags", grp: "CAD fit", heat: true,
+    meta: "the step-4 placement, coloured by distance to the reconstruction", step: "cad" });
 MODELS.push({ id: "cad_frame_on_gs", name: "Step 8: CAD frame + screws on the GS mesh", grp: "Head and device", meta: "Stochastic Solids mesh with the CAD overlay switched on", step: "s8", alias: "gs_stochastic_solids", cad: true });
 
 const $ = s => document.querySelector(s);
@@ -360,6 +385,7 @@ async function show(id) {
     $("#status").textContent = "drag: rotate · right-drag: pan · wheel: zoom";
   } catch (e) { $("#status").textContent = "could not load " + real; }
   if (M.cad) { $("#ovCad").checked = true; toggleCad(); }
+  $("#heatLegend").hidden = !M.heat;
 }
 
 /* overlays */
@@ -529,6 +555,18 @@ function buildSteps() {
   document.querySelectorAll("[data-g]").forEach(b => b.onclick = () => openLb(b.dataset.g));
 }
 
+function cadTable(C) {
+  const lab = { G_sim: "Global, tags (step 4)", G_rig: "Global, tags, CAD scale", G_icp: "Global, shape only", G_mix: "Global, tags + shape",
+    G_mixs: "Global, tags + shape, free scale", P_mix: "Per part, tags + shape", P_mixs: "Per part, free scale", L_mix: "Local, per screw" };
+  const f = (v, d = 2) => v == null || isNaN(v) ? "–" : v.toFixed(d);
+  $("#cadtable tbody").innerHTML = Object.entries(C.summary).map(([k, r]) => `<tr${k === "P_mixs" ? ' class="sel"' : ""}><td>${lab[k] || k}</td>
+    <td class="mono">${f(r.scale.A, 4)}</td><td class="mono">${f(r.scale.B, 4)}</td><td class="mono">${r.tag_res_rms_mm != null ? f(r.tag_res_rms_mm) + " mm" : "–"}</td>
+    <td class="mono">${r.icp_median_mm ? f(r.icp_median_mm.A) + " / " + f(r.icp_median_mm.B) + " mm" : "–"}</td><td class="mono">${f(r.coarse_bias)} mm</td>
+    <td class="mono ${r.fine_max > 2 ? "flag" : "good"}">${f(r.fine_mae)} / ${f(r.fine_max)} mm</td></tr>`).join("");
+  const j = C.joint_B_rel_A;
+  $("#cadnote").textContent = `Part B relative to part A after the per-part fit: ${j.rotation_deg.toFixed(2)}° rotation, (${j.translation_mm.map(v => v.toFixed(1)).join(", ")}) mm shift. CAD-to-mesh median distance: part A ${C.heatmap.per_part.A.median_mm.toFixed(2)} mm per part (${C.heatmap.global_tags.A.median_mm.toFixed(2)} global), part B ${C.heatmap.per_part.B.median_mm.toFixed(2)} mm.`;
+}
+
 /* ---------- boot ---------- */
 (async () => {
   buildSteps();
@@ -538,6 +576,7 @@ function buildSteps() {
   } catch (e) { $("#status").textContent = "could not load the data files"; }
   buildModelList(); resize(); setView("front");
   if (MARK) buildOverlays(); if (R) { chart(); table(); alignBox(); }
+  try { cadTable(await fetch("cad_fit_summary.json").then(x => x.json())); } catch (e) {}
   loop();
   const hash = location.hash.replace("#", ""); show(MODELS.find(m => m.id === hash) ? hash : "gs_stochastic_solids");
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (MARK) buildOverlays(); if (R) chart(); });
