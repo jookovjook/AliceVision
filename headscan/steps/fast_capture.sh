@@ -4,13 +4,15 @@
 # (tag_triangulate.py) -> GS export -> Stochastic Solids with the 30k schedule scaled to ITERS -> TSDF mesh ->
 # distance to the full-run mesh (REF) -> CAD fit + image fit -> essentials to Drive.
 #   bash headscan/steps/fast_capture.sh CAPTURE [STAGES]      CAPTURE = folder in /workspace/data (Stray Scanner)
-#   STAGES (default all): frames,init,tags,poses,export,ss,compare,fit,upload
+#   STAGES (default all): frames,init,tags,poses,joint,export,ss,compare,fit,upload
+#   joint = SIFT between neighbouring keyframes + joint bundle adjustment of tag corners and SIFT tracks (env SIFT_MAX
+#   tracks, default 8000; SIFT_NEIGHBOURS frames, default 8)
 # Env: WIN (8), ITERS (7000), SCALE (1 head / 3 table: rasterizer near plane 0.2), CENTER/HALF (extraction cube, m),
 #      REF (full-run TSDF mesh to compare with), RULER (head: ruler gaps for image_fit.py --ruler), DRIVE,
 #      CALIB (calibration constants for apply_calibration.py; default data/calibration_constants_oct22.json).
 # Final output: readouts.json (calibrated screw gaps, knob K) next to the mesh and the fits.
 set -euo pipefail
-CAP=$1; STAGES=${2:-frames,init,tags,poses,export,ss,compare,fit,upload}
+CAP=$1; STAGES=${2:-frames,init,tags,poses,joint,export,ss,compare,fit,upload}
 HS=/workspace/AliceVision/headscan; PY=/workspace/hsvenv/bin/python
 CONDA=${CONDA:-/workspace/miniforge}; REPO=${REPO:-/workspace/src/gsss}
 D=/workspace/data/$CAP; W=/workspace/fast/$CAP
@@ -43,6 +45,25 @@ if has poses && [ ! -f "$W/device/sfm_device.sfm" ]; then
     --segments --arkit-prior --arkit-sd 0.5,0.05 > "$W/logs/poses.log" 2>&1
   $PY -I "$HS/tag_triangulate.py" "$W/device/tag_poses.sfm" "$W/feat_tags" "$W/device/sfm_device.sfm" >> "$W/logs/poses.log" 2>&1
   tail -2 "$W/logs/poses.log"
+fi
+if has joint && [ ! -f "$W/device/joint.done" ]; then
+  # joint pose refinement: SIFT on the keyframes, matched between neighbouring frames, tracks -> one bundle adjustment of
+  # the frame-tag corners + these tracks (poses fit the head as well as the frame); replaces the tag-only device sfm
+  t joint; S2=$W/sift; mkdir -p "$S2/feat" "$S2/match"
+  (. /opt/av/env.sh
+   aliceVision_featureExtraction --input "$W/sfm/00_init/cameraInit.sfm" --output "$S2/feat" --describerTypes dspsift \
+     --describerPreset normal --forceCpuExtraction 1 --maxThreads "$AV_CORES" --verboseLevel info > "$W/logs/sift_feat.log" 2>&1
+   aliceVision_imageMatching --input "$W/sfm/00_init/cameraInit.sfm" --featuresFolders "$S2/feat" --method Sequential \
+     --nbNeighbors "${SIFT_NEIGHBOURS:-8}" --output "$S2/pairs.txt" --maxCoresAvailable "$AV_CORES" --verboseLevel info > "$W/logs/sift_pairs.log" 2>&1
+   aliceVision_featureMatching --input "$W/sfm/00_init/cameraInit.sfm" --featuresFolders "$S2/feat" --imagePairsList "$S2/pairs.txt" \
+     --output "$S2/match" --describerTypes dspsift --guidedMatching 0 --maxCoresAvailable "$AV_CORES" --verboseLevel info > "$W/logs/sift_match.log" 2>&1
+   aliceVision_tracksBuilding --input "$W/sfm/00_init/cameraInit.sfm" --featuresFolders "$S2/feat" --matchesFolders "$S2/match" \
+     --describerTypes dspsift --output "$S2/tracks.json" --maxCoresAvailable "$AV_CORES" --verboseLevel info > "$W/logs/sift_tracks.log" 2>&1)
+  t joint_ba
+  $PY -I "$HS/tag_poses.py" "$D/" "$W/sfm/00_init/cameraInit.sfm" "$W/feat_tags" "$LAYOUT" "$W/device/joint_poses.sfm" \
+    --segments --arkit-prior --arkit-sd 0.5,0.05 --intrinsics --sift "$S2/tracks.json" --sift-max "${SIFT_MAX:-8000}" > "$W/logs/joint.log" 2>&1
+  $PY -I "$HS/tag_triangulate.py" "$W/device/joint_poses.sfm" "$W/feat_tags" "$W/device/sfm_device.sfm" >> "$W/logs/joint.log" 2>&1
+  grep -E "SIFT|BA:" "$W/logs/joint.log"; touch "$W/device/joint.done"
 fi
 if has export && [ ! -f "$W/gs/dataset/export_check.json" ]; then
   t export; $PY -I "$HS/gs_export.py" "$W/device/sfm_device.sfm" "$D" "$W/gs/dataset" --scale "$SCALE" > "$W/logs/export.log" 2>&1
@@ -86,7 +107,7 @@ t done
 # stage durations
 $PY -I - "$W/logs" > "$W/times.json" <<'EOF'
 import sys, os, json
-L = sys.argv[1]; order = ["frames", "init", "tags", "poses", "export", "ss", "ss_extract", "compare", "fit", "done"]
+L = sys.argv[1]; order = ["frames", "init", "tags", "poses", "joint", "joint_ba", "export", "ss", "ss_extract", "compare", "fit", "done"]
 t = {k: int(open(f"{L}/t_{k}").read()) for k in order if os.path.exists(f"{L}/t_{k}")}
 ks = [k for k in order if k in t]
 print(json.dumps({a: t[b] - t[a] for a, b in zip(ks, ks[1:])}))

@@ -84,7 +84,7 @@ def main():
     ap.add_argument("--perframe-k", action="store_true", help="per-view ARKit fx, fy, cx, cy (shared corrections only)")
     ap.add_argument("--seg-sd", default="1.0,0.5", help="segment prior: mm, deg")
     ap.add_argument("--arkit-sd", default="3.0,0.3", help="ARKit relative-pose prior: mm, deg")
-    ap.add_argument("--sift", default="", help="sfmData with SIFT tracks (2-D observations per viewId, e.g. an SfM run): joint BA "
+    ap.add_argument("--sift", default="", help="SIFT tracks: an sfmData with landmarks or an aliceVision_tracksBuilding tracks.json: joint BA "
                     "of the frame-tag corners + these tracks (3-D points free), so the poses also fit the head, not only the frame")
     ap.add_argument("--sift-max", type=int, default=20000, help="tracks used (>= 3 posed views; longest first)")
     ap.add_argument("--sift-weight", type=float, default=1.0, help="weight of a SIFT pixel vs a tag-corner pixel")
@@ -123,12 +123,22 @@ def main():
     if a.sift:
         vid2i = {str(v["viewId"]): i for i, v in enumerate(views)}
         tracks = []
-        for l in json.load(open(a.sift))["structure"]:
-            if l["descType"] == "tag36h11":
-                continue
-            o = [(vid2i[str(q["observationId"])], float(q["x"][0]), float(q["x"][1])) for q in l["observations"] if str(q["observationId"]) in vid2i]
-            if len(o) >= 3:
-                tracks.append(o)
+        J = json.load(open(a.sift))
+        if isinstance(J, dict) and "structure" in J:   # sfmData landmarks
+            for l in J["structure"]:
+                if l["descType"] == "tag36h11":
+                    continue
+                o = [(vid2i[str(q["observationId"])], float(q["x"][0]), float(q["x"][1])) for q in l["observations"] if str(q["observationId"]) in vid2i]
+                if len(o) >= 3:
+                    tracks.append(o)
+        else:                                            # aliceVision_tracksBuilding tracks.json: {trackId: {descType, featPerView}}
+            pairs = lambda m: m.items() if isinstance(m, dict) else ((e[0], e[1]) if isinstance(e, list) else (e["key"], e["value"]) for e in m)
+            for _, tr in pairs(J):
+                if tr["descType"] == "tag36h11":
+                    continue
+                o = [(vid2i[str(v)], float(it["coords"][0]), float(it["coords"][1])) for v, it in pairs(tr["featPerView"]) if str(v) in vid2i]
+                if len(o) >= 3:
+                    tracks.append(o)
         tracks.sort(key=len, reverse=True); tracks = tracks[:a.sift_max]
         sv = np.array([o[0] for tr in tracks for o in tr]); sp_ = np.array([p_ for p_, tr in enumerate(tracks) for _ in tr])
         suv = np.array([[o[1], o[2]] for tr in tracks for o in tr])
