@@ -6,7 +6,8 @@
 #   bash headscan/steps/fast_capture.sh CAPTURE [STAGES]      CAPTURE = folder in /workspace/data (Stray Scanner)
 #   STAGES (default all): frames,init,tags,poses,joint,export,ss,compare,fit,upload
 #   joint = SIFT between neighbouring keyframes + joint bundle adjustment of tag corners and SIFT tracks (env SIFT_MAX
-#   tracks, default 8000; SIFT_NEIGHBOURS frames, default 8)
+#   tracks, default 8000; SIFT_NEIGHBOURS frames, default 8; intrinsics stay fixed (ARKit) unless JOINT_INTRINSICS=1:
+#   freeing them moved the ear knobs by ~0.5 mm on the table captures)
 # Env: WIN (8), ITERS (7000), SCALE (1 head / 3 table: rasterizer near plane 0.2), CENTER/HALF (extraction cube, m),
 #      REF (full-run TSDF mesh to compare with), RULER (head: ruler gaps for image_fit.py --ruler), DRIVE,
 #      CALIB (calibration constants for apply_calibration.py; default data/calibration_constants_oct22.json).
@@ -61,7 +62,7 @@ if has joint && [ ! -f "$W/device/joint.done" ]; then
      --describerTypes dspsift --output "$S2/tracks.json" --maxCoresAvailable "$AV_CORES" --verboseLevel info > "$W/logs/sift_tracks.log" 2>&1)
   t joint_ba
   $PY -I "$HS/tag_poses.py" "$D/" "$W/sfm/00_init/cameraInit.sfm" "$W/feat_tags" "$LAYOUT" "$W/device/joint_poses.sfm" \
-    --segments --arkit-prior --arkit-sd 0.5,0.05 --intrinsics --sift "$S2/tracks.json" --sift-max "${SIFT_MAX:-8000}" > "$W/logs/joint.log" 2>&1
+    --segments --arkit-prior --arkit-sd 0.5,0.05 ${JOINT_INTRINSICS:+--intrinsics} --sift "$S2/tracks.json" --sift-max "${SIFT_MAX:-8000}" > "$W/logs/joint.log" 2>&1
   $PY -I "$HS/tag_triangulate.py" "$W/device/joint_poses.sfm" "$W/feat_tags" "$W/device/sfm_device.sfm" >> "$W/logs/joint.log" 2>&1
   grep -E "SIFT|BA:" "$W/logs/joint.log"; touch "$W/device/joint.done"
 fi

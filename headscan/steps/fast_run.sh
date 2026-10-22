@@ -13,7 +13,7 @@ env_of() {   # per-capture settings
   else echo "RULER= SCALE=3 CENTER='0 0 0.1' HALF=0.26 REF=/workspace/ref/${1}_tsdf.ply"; fi
 }
 CAPS="6ba4b7d84f calibration_1 calibration_2 calibration_3"
-export DRIVE_ROOT=${DRIVE_ROOT:-gdrive:frame_capture/fast_pipeline_joint}
+export DRIVE_ROOT=${DRIVE_ROOT:-gdrive:frame_capture/fast_pipeline_joint_fixedK}
 for c in $CAPS; do
   (eval "$(env_of $c)"; export SCALE CENTER HALF REF RULER; AV_CORES=14 OMP_NUM_THREADS=14 \
     bash "$HS/steps/fast_capture.sh" $c frames,init,tags,poses,joint,export > $L/$c.fast_cpu.log 2>&1; echo "$c cpu exit $?") &
