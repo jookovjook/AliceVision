@@ -19,7 +19,7 @@ D=/workspace/data/$CAP; W=/workspace/fast/$CAP
 LAYOUT=${LAYOUT:-/workspace/arc/tags/frame_tags_layout.json}
 WIN=${WIN:-8}; ITERS=${ITERS:-7000}; SCALE=${SCALE:-1}
 CENTER=${CENTER:-"0.02 0.04 0.04"}; HALF=${HALF:-0.22}
-DRIVE=${DRIVE:-gdrive:frame_capture/fast_pipeline/$CAP}
+DRIVE=${DRIVE:-${DRIVE_ROOT:-gdrive:frame_capture/fast_pipeline}/$CAP}
 export AV_CORES=${AV_CORES:-48} OMP_NUM_THREADS=${OMP_NUM_THREADS:-24} MKL_NUM_THREADS=${OMP_NUM_THREADS:-24} PYTHONUNBUFFERED=1
 mkdir -p "$W/logs"
 exec 9>"$W/.lock"; flock 9
