@@ -89,6 +89,9 @@ EOF
 cat "$W/times.json"
 if has upload; then
   # essentials only: poses, tag corners, mesh, fits, figures, logs (frames, export images, the Gaussian model stay on the box)
-  rclone copy "$W" "$DRIVE" --transfers 8 --exclude "frames/all/**" --exclude "frames/keyframes/**" --exclude "gs/dataset/**" \
-    --exclude "gs/data/**" --exclude "gs/model/**" --exclude "sfm/0[1-9]*/**" --exclude "fit/in/**" 2>&1 | grep -v NOTICE || true
+  # Drive is slow with many small files: the tag detections go up as one archive; in the background so the GPU queue moves on
+  tar -C "$W" -czf "$W/feat_tags.tar.gz" feat_tags
+  nohup rclone copy "$W" "$DRIVE" --transfers 8 --exclude "frames/all/**" --exclude "frames/keyframes/**" --exclude "gs/dataset/**" \
+    --exclude "gs/data/**" --exclude "gs/model/**" --exclude "sfm/0[1-9]*/**" --exclude "fit/in/**" --exclude "feat_tags/**" \
+    > "$W/logs/upload.log" 2>&1 &
 fi
