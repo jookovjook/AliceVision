@@ -84,6 +84,10 @@ def main():
     ap.add_argument("--perframe-k", action="store_true", help="per-view ARKit fx, fy, cx, cy (shared corrections only)")
     ap.add_argument("--seg-sd", default="1.0,0.5", help="segment prior: mm, deg")
     ap.add_argument("--arkit-sd", default="3.0,0.3", help="ARKit relative-pose prior: mm, deg")
+    ap.add_argument("--sift", default="", help="sfmData with SIFT tracks (2-D observations per viewId, e.g. an SfM run): joint BA "
+                    "of the frame-tag corners + these tracks (3-D points free), so the poses also fit the head, not only the frame")
+    ap.add_argument("--sift-max", type=int, default=20000, help="tracks used (>= 3 posed views; longest first)")
+    ap.add_argument("--sift-weight", type=float, default=1.0, help="weight of a SIFT pixel vs a tag-corner pixel")
     a = ap.parse_args()
     t0 = time.time()
     cap = Path(a.capture)
@@ -114,6 +118,22 @@ def main():
     dloc = loc - cen; nd = np.linalg.norm(dloc, axis=1, keepdims=True)
     print(f"{len(views)} views, {(ntag > 0).sum()} with frame tags, {(ntag >= a.min_tags).sum()} with >= {a.min_tags}; "
           f"{len(obs)} corner observations; intrinsics f {fy0:.1f}, k {np.round(k0, 4).tolist()}")
+
+    sift = None
+    if a.sift:
+        vid2i = {str(v["viewId"]): i for i, v in enumerate(views)}
+        tracks = []
+        for l in json.load(open(a.sift))["structure"]:
+            if l["descType"] == "tag36h11":
+                continue
+            o = [(vid2i[str(q["observationId"])], float(q["x"][0]), float(q["x"][1])) for q in l["observations"] if str(q["observationId"]) in vid2i]
+            if len(o) >= 3:
+                tracks.append(o)
+        tracks.sort(key=len, reverse=True); tracks = tracks[:a.sift_max]
+        sv = np.array([o[0] for tr in tracks for o in tr]); sp_ = np.array([p_ for p_, tr in enumerate(tracks) for _ in tr])
+        suv = np.array([[o[1], o[2]] for tr in tracks for o in tr])
+        sift = (sv, sp_, suv, len(tracks))
+        print(f"SIFT: {len(tracks)} tracks, {len(sv)} observations")
 
     # 1. PnP per view (undistorted normalised points, CAD corners)
     K1 = np.eye(3)
@@ -162,9 +182,19 @@ def main():
         posed = np.ones(len(views), bool)
 
     # 3. bundle adjustment
-    nv = len(views); I_IN = 6 * nv; I_SEG = I_IN + 6; I_DEL = I_SEG + 24; I_LS = I_DEL + 1; NP = I_LS + 1
+    nv = len(views); I_IN = 6 * nv; I_SEG = I_IN + 6; I_DEL = I_SEG + 24; I_LS = I_DEL + 1; I_PT = I_LS + 1
+    NP = I_PT + (3 * sift[3] if sift else 0)
     seg_sd = [float(v) for v in a.seg_sd.split(",")]; ark_sd = [float(v) for v in a.arkit_sd.split(",")]
     x0 = np.r_[x_views.ravel(), 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, np.zeros(24), 0.0, np.log(s)]
+    if sift:   # points: closest point to their rays from the initial poses
+        sv, sp_, suv, npt = sift
+        Rv0 = Rotation.from_rotvec(x_views[:, :3]).as_matrix()
+        xu = undistort(suv, np.array([fx0, fy0]), np.array([cx0, cy0]), k0)
+        dw = np.einsum("nji,nj->ni", Rv0[sv], np.c_[xu, np.ones(len(xu))]); dw /= np.linalg.norm(dw, axis=1, keepdims=True)
+        A = np.zeros((npt, 3, 3)); b = np.zeros((npt, 3))
+        Mo = np.eye(3)[None] - dw[:, :, None] * dw[:, None, :]
+        np.add.at(A, sp_, Mo); np.add.at(b, sp_, np.einsum("nij,nj->ni", Mo, x_views[sv, 3:]))
+        x0 = np.r_[x0, np.linalg.solve(A + 1e-9 * np.eye(3), b[..., None])[..., 0].ravel()]
     k_base = np.array(k0)
     pairs = [(i, i + 1) for i in range(nv - 1)] if a.arkit_prior else []
     # ARKit relative motion in camera i: R_ij = R_ci_w R_cj_w^T ; t_ij = R_ci_w (C_j - C_i)
@@ -198,10 +228,18 @@ def main():
             dRr = Rotation.from_matrix(Rv[pi] @ np.transpose(Rv[pj], (0, 2, 1)) @ np.transpose(relR, (0, 2, 1))).as_rotvec()
             dt = np.einsum("nij,nj->ni", Rv[pi], xv[pj, 3:] - xv[pi, 3:]) - np.exp(ls) * relt
             out.append(np.c_[np.degrees(dRr) / ark_sd[1], dt / ark_sd[0]].ravel())
+        if sift:
+            sv, sp_, suv, npt = sift
+            P = x[I_PT:].reshape(npt, 3)
+            Rc = Rotation.from_rotvec(xv[sv, :3]).as_matrix()
+            Xc = np.einsum("nij,nj->ni", Rc, P[sp_] - xv[sv, 3:])
+            xd = distort(Xc[:, :2] / Xc[:, 2:3], np.broadcast_to(k, (len(Xc), 3)))
+            out.append(a.sift_weight * (np.c_[fx[sv] * xd[:, 0] + cx[sv], fy[sv] * xd[:, 1] + cy[sv]] - suv).ravel())
         return np.concatenate(out)
 
     # sparsity
-    nres = nres_obs + (24 if a.segments else 0) + 6 * len(pairs)
+    nres_pri = nres_obs + (24 if a.segments else 0) + 6 * len(pairs)
+    nres = nres_pri + (2 * len(sift[0]) if sift else 0)
     S = lil_matrix((nres, NP), dtype=np.int8)
     rows = np.arange(nres_obs // 2)
     vm, sm = vi[obs_m], seg[obs_m]
@@ -222,6 +260,14 @@ def main():
             for c in range(6):
                 S[o + 6 * q + r_, 6 * i + c] = 1; S[o + 6 * q + r_, 6 * j + c] = 1
             S[o + 6 * q + r_, I_LS] = 1
+    if sift:
+        sv, sp_, _, _ = sift; rows = np.arange(len(sv))
+        for r_ in (0, 1):
+            for c in range(6):
+                S[nres_pri + 2 * rows + r_, 6 * sv + c] = 1
+                S[nres_pri + 2 * rows + r_, I_IN + c] = 1
+            for c in range(3):
+                S[nres_pri + 2 * rows + r_, I_PT + 3 * sp_ + c] = 1
     # fixed blocks: columns removed through bounds-free masking (active set)
     free = np.ones(NP, bool)
     free[:I_IN][~np.repeat(posed, 6)] = False
@@ -243,7 +289,7 @@ def main():
     xv, (fx, fy, cx, cy, k), sg, dl, ls = unpack(x)
     # gauge: move everything so the reconstructed frame-tag corners fit the CAD rigidly (the from_markers definition of
     # the device frame, without its free scale: the tags set the scale here)
-    gauge = (0.0, 0.0)
+    gauge = (0.0, 0.0); Rf, tf = np.eye(3), np.zeros(3)
     if a.segments:
         ms = sorted(set(mi)); cad = np.array([model[m][1] for m in ms]); gi = np.array([SEGS.index(model[m][0]) for m in ms])
         Rg = Rotation.from_rotvec(sg[gi, :3]).as_matrix(); rec = np.einsum("nij,nj->ni", Rg, cad) + sg[gi, 3:]
@@ -255,6 +301,10 @@ def main():
         xv[:, :3] = Rotation.from_matrix(Rv).as_rotvec(); xv[:, 3:] = xv[:, 3:] @ Rf.T + tf
         gauge = (float(np.degrees(np.linalg.norm(Rotation.from_matrix(Rf).as_rotvec()))), float(np.linalg.norm(tf)))
         print(f"gauge: frame corners -> CAD by {gauge[0]:.2f} deg, {gauge[1]:.2f} mm")
+    sift_px = None
+    if sift:
+        rs = residuals(x)[nres_pri:].reshape(-1, 2) / a.sift_weight; sift_px = float(np.median(np.linalg.norm(rs, axis=1)))
+        print(f"SIFT reprojection median {sift_px:.2f} px")
     dt = time.time() - t0
     per_view = np.full(nv, np.nan)
     for i in range(nv):
@@ -291,9 +341,12 @@ def main():
              "reproj_px": {"init_median": float(np.median(e0)), "median": float(np.median(e)), "p90": float(np.percentile(e, 90))},
              "inset_mm": float(dl), "focal_px": float(np.median(fy)), "focal_arkit_px": fy0, "pp": [float(np.median(cx)), float(np.median(cy))], "k": [float(q) for q in k],
              "arkit_mm_per_m": float(np.exp(ls)), "segments": {g: {"rotvec_deg": np.degrees(sg[j, :3]).tolist(), "t_mm": sg[j, 3:].tolist()} for j, g in enumerate(SEGS)},
-             "gauge_deg_mm": gauge, "seconds": dt, "options": vars(a),
+             "gauge_deg_mm": gauge, "seconds": dt, "options": vars(a), "sift_reproj_px": sift_px,
              "per_view": [{"viewId": views[i]["viewId"], "tags": int(ntag[i]), "init": src[i], "reproj_px": None if np.isnan(per_view[i]) else float(per_view[i])} for i in range(nv)]}
     json.dump(stats, open(Path(a.out).with_suffix(".json"), "w"), indent=1)
+    if sift:   # 3-D points of the SIFT tracks in the device frame (mm), for comparisons
+        P = x[I_PT:].reshape(sift[3], 3) @ Rf.T + tf
+        np.savez(Path(a.out).with_suffix(".sift.npz"), points_mm=P, view=sift[0], point=sift[1], uv=sift[2])
 
 
 if __name__ == "__main__":

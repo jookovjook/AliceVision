@@ -6,7 +6,9 @@
 #   bash headscan/steps/fast_capture.sh CAPTURE [STAGES]      CAPTURE = folder in /workspace/data (Stray Scanner)
 #   STAGES (default all): frames,init,tags,poses,export,ss,compare,fit,upload
 # Env: WIN (8), ITERS (7000), SCALE (1 head / 3 table: rasterizer near plane 0.2), CENTER/HALF (extraction cube, m),
-#      REF (full-run TSDF mesh to compare with), RULER (head: ruler gaps for image_fit.py --ruler), DRIVE.
+#      REF (full-run TSDF mesh to compare with), RULER (head: ruler gaps for image_fit.py --ruler), DRIVE,
+#      CALIB (calibration constants for apply_calibration.py; default data/calibration_constants_oct22.json).
+# Final output: readouts.json (calibrated screw gaps, knob K) next to the mesh and the fits.
 set -euo pipefail
 CAP=$1; STAGES=${2:-frames,init,tags,poses,export,ss,compare,fit,upload}
 HS=/workspace/AliceVision/headscan; PY=/workspace/hsvenv/bin/python
@@ -76,6 +78,9 @@ if has fit && [ ! -f "$W/fit/img/image_fit.json" ]; then
   $PY -I "$HS/cad_fit.py" "$W/fit/in" "$W/fit/cad" ${RULER:+--ruler $RULER} > "$W/logs/cad_fit.log" 2>&1
   $PY -I "$HS/image_fit.py" "$W/fit/in" "$W/fit/cad/cad_fit.json" "$W/fit/img" --free-axis ${RULER:+--ruler $RULER} > "$W/logs/image_fit.log" 2>&1
   grep -E "reprojection|coarse gap|knobs" "$W/logs/image_fit.log"
+  # calibrated readouts (per-screw constants from the frame-on-the-table captures)
+  $PY -I "$HS/apply_calibration.py" "$W/fit/img/image_fit.json" "${CALIB:-$HS/data/calibration_constants_oct22.json}" \
+    "$W/readouts.json" ${RULER:+--ruler $RULER} | tee "$W/logs/readouts.log"
 fi
 t done
 # stage durations

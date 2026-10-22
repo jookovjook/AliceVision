@@ -6,13 +6,14 @@ Hair, clothes and the frame differ between the two scans, so only the FACE is us
   1. both point sets are rendered from the front (z-buffered point splats), MediaPipe FaceMesh runs on several
      yaw/pitch offsets, landmarks are lifted to 3-D from the render's point-index buffer, median over renders;
   2. rigid Umeyama on the matched landmarks (scale reported, not applied: both are metric);
-  3. trimmed point-to-plane ICP of the scan's face (within 90 mm of the nose tip, below the forehead landmark +15 mm,
+  3. trimmed point-to-plane ICP (rigid, then with a free scale unless ALIGN_RIGID=1) of the scan's face (within 90 mm of the nose tip, below the forehead landmark +15 mm,
      in front of the ears, not below the chin) onto the reference surface.
 REF.ply: device frame (origin ear-axis midpoint, x right, y forward, z up), metres, vertex colours.
 Writes OUT_DIR/align.json (transform scan -> device, residuals, landmark errors), scan_device.ply, figures.
 Needs mediapipe 0.10.21 (legacy solutions API).
 """
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -26,6 +27,9 @@ LM = {"between_eyes": 168, "nose_bridge": 6, "glabella": 9, "forehead": 10, "nos
       "eye_R_outer": 33, "eye_R_inner": 133, "eye_L_inner": 362, "eye_L_outer": 263, "mouth_R": 61, "mouth_L": 291,
       "face_R": 234, "face_L": 454}
 W, H, F = 900, 1100, 1900.0
+# free scale on by default: StandardCyborg unprojects with Apple's focal x 1.019, so its scans come out ~2-3 % small
+# (tfus-simulation me_render.py; vs the MRI x1.030, vs our heads x1.031-1.035); ALIGN_RIGID=1 for a rigid fit
+FREE_SCALE = not os.environ.get("ALIGN_RIGID")
 ARC = "/Users/jack/aspect/tfus-simulation/.claude/worktrees/vastai-cuda-setup-69d92b/results/arc_redesign/tags"
 FRAME_STL = [f"{ARC}/frame_L116_A_plates.stl", f"{ARC}/frame_L116_B_plates.stl"]
 
@@ -152,19 +156,24 @@ def main():
     def face_mask(Q):
         return (np.linalg.norm(Q - Lnose, axis=1) < 0.09) & (Q[:, 2] < eye_z + 0.035) & (Q[:, 1] > 0.035) & \
                (Q[:, 2] > Lr["chin"][0][2] - 0.01)
-    for it in range(40):
+    for it in range(60):
         Q = sub @ R.T + t; m = face_mask(Q)
         d, j = tree.query(Q[m]); keep = d < np.quantile(d, 0.85) if it > 2 else d < 0.01
         A, Nn, Bp = Q[m][keep], Nr[j[keep]], Pr[j[keep]]
         r = ((Bp - A) * Nn).sum(1); J = np.c_[np.cross(A, Nn), Nn]
+        scale_on = FREE_SCALE and it >= 10                     # rigid first, then a free scale (about the origin; t is free)
+        if scale_on:
+            J = np.c_[J, (A * Nn).sum(1)]
         x = np.linalg.lstsq(J, r, rcond=None)[0]
         dR = trimesh.transformations.rotation_matrix(np.linalg.norm(x[:3]), x[:3] / (np.linalg.norm(x[:3]) + 1e-12))[:3, :3]
-        R, t = dR @ R, dR @ t + x[3:]
-        if np.linalg.norm(x) < 1e-7:
+        ds = np.exp(x[6]) if scale_on else 1.0
+        R, t = ds * dR @ R, ds * dR @ t + x[3:6]                # R holds scale x rotation
+        if np.linalg.norm(x) < 1e-7 and it >= 10:
             break
     Q = Ps @ R.T + t; m = face_mask(Q); d, j = tree.query(Q[m]); dn = np.abs(((Q[m] - Pr[j]) * Nr[j]).sum(1))
     lm_icp = {k: float(np.linalg.norm(Ls[k][0] @ R.T + t - Lr[k][0]) * 1000) for k in LM if k in Ls and k in Lr}
-    res = {"T_scan_to_device": np.r_[np.c_[R, t], [[0, 0, 0, 1]]].tolist(), "landmarks_used": keys,
+    res = {"T_scan_to_device": np.r_[np.c_[R, t], [[0, 0, 0, 1]]].tolist(), "scale": float(np.cbrt(np.linalg.det(R))),
+           "free_scale": FREE_SCALE, "landmarks_used": keys,
            "landmark_err_mm_after_icp": lm_icp, "landmark_similarity_scale": s,
            "face_icp": {"points": int(m.sum()), "median_mm": float(np.median(dn) * 1000), "p90_mm": float(np.percentile(dn, 90) * 1000),
                         "rms_trim85_mm": float(np.sqrt(np.mean(np.sort(dn)[:int(0.85 * len(dn))] ** 2)) * 1000)}}
