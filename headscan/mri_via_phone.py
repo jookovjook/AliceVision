@@ -17,11 +17,38 @@ import trimesh
 from scipy.spatial import cKDTree
 from scipy.spatial.transform import Rotation
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from align_mri import icp  # noqa: E402
-from align_face_scan import FRAME_STL  # noqa: E402
+ARC = "/Users/jack/aspect/tfus-simulation/.claude/worktrees/vastai-cuda-setup-69d92b/results/arc_redesign/tags"
+FRAME_STL = [f"{ARC}/frame_L116_A_plates.stl", f"{ARC}/frame_L116_B_plates.stl"]
 
 NOSE_DEV = np.array([-0.005, 0.117, -0.057])   # nose tip in the device frame (face landmarks of the head capture)
+
+
+def icp(src, tree, Pr, Nr, R, t, scale=False, iters=60):
+    """Trimmed point-to-plane ICP (linearised about the origin, as align_face_scan.py); optional log-scale about the
+    source centroid. Returns R, t, s and the point-to-plane distances of the final pose."""
+    s = 1.0
+    for it in range(iters):
+        c = (src @ R.T + t).mean(0)
+        X = s * (src @ R.T + t - c) + c
+        d, j = tree.query(X)
+        gate = 0.02 if it < 10 else (0.01 if it < 20 else np.quantile(d, 0.85))   # wide first, then trimmed
+        keep = d < gate
+        if keep.sum() < 100:
+            break
+        A, N, B = X[keep], Nr[j[keep]], Pr[j[keep]]
+        r = ((B - A) * N).sum(1)
+        J = np.c_[np.cross(A, N), N]
+        if scale:
+            J = np.c_[J, ((A - c) * N).sum(1)]
+        x = np.linalg.lstsq(J, r, rcond=None)[0]
+        dR = Rotation.from_rotvec(x[:3]).as_matrix()
+        R, t = dR @ R, dR @ t + x[3:6]
+        if scale:
+            s *= np.exp(x[6])
+        if np.linalg.norm(x) < 1e-8:
+            break
+    c = (src @ R.T + t).mean(0); X = s * (src @ R.T + t - c) + c; d, j = tree.query(X)
+    return R, t, s, np.abs(((X - Pr[j]) * Nr[j]).sum(1))
 
 
 def read_scan(path):
