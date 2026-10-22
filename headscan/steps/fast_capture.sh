@@ -118,6 +118,6 @@ if has upload; then
   # Drive is slow with many small files: the tag detections go up as one archive; in the background so the GPU queue moves on
   tar -C "$W" -czf "$W/feat_tags.tar.gz" feat_tags
   nohup rclone copy "$W" "$DRIVE" --transfers 8 --exclude "frames/all/**" --exclude "frames/keyframes/**" --exclude "gs/dataset/**" \
-    --exclude "gs/data/**" --exclude "gs/model/**" --exclude "sfm/0[1-9]*/**" --exclude "fit/in/**" --exclude "feat_tags/**" \
+    --exclude "gs/data/**" --exclude "gs/model/**" --exclude "sfm/0[1-9]*/**" --exclude "fit/in/**" --exclude "feat_tags/**" --exclude "sift/**" \
     > "$W/logs/upload.log" 2>&1 &
 fi
