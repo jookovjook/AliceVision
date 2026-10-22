@@ -194,7 +194,21 @@ def main():
         A = np.zeros((npt, 3, 3)); b = np.zeros((npt, 3))
         Mo = np.eye(3)[None] - dw[:, :, None] * dw[:, None, :]
         np.add.at(A, sp_, Mo); np.add.at(b, sp_, np.einsum("nij,nj->ni", Mo, x_views[sv, 3:]))
-        x0 = np.r_[x0, np.linalg.solve(A + 1e-9 * np.eye(3), b[..., None])[..., 0].ravel()]
+        Pt = np.linalg.solve(A + 1e-9 * np.eye(3), b[..., None])[..., 0]
+        # drop tracks that start badly (point behind a camera or > 8 px median reprojection): they wreck the intrinsics
+        Xc = np.einsum("nij,nj->ni", Rv0[sv], Pt[sp_] - x_views[sv, 3:])
+        xd = distort(Xc[:, :2] / Xc[:, 2:3], np.broadcast_to(k0, (len(Xc), 3)))
+        e = np.linalg.norm(np.c_[fx0 * xd[:, 0] + cx0, fy0 * xd[:, 1] + cy0] - suv, axis=1)
+        e[Xc[:, 2] <= 0] = 1e9
+        med = np.array([np.median(e[sp_ == q]) for q in range(npt)])
+        good = med < 8.0
+        remap = -np.ones(npt, int); remap[good] = np.arange(good.sum())
+        keep = good[sp_]
+        sv, sp_, suv, npt = sv[keep], remap[sp_[keep]], suv[keep], int(good.sum())
+        sift = (sv, sp_, suv, npt)
+        print(f"SIFT: {npt} tracks kept after the initial check ({len(sv)} observations)")
+        NP = I_PT + 3 * npt
+        x0 = np.r_[x0, Pt[good].ravel()]
     k_base = np.array(k0)
     pairs = [(i, i + 1) for i in range(nv - 1)] if a.arkit_prior else []
     # ARKit relative motion in camera i: R_ij = R_ci_w R_cj_w^T ; t_ij = R_ci_w (C_j - C_i)
@@ -282,13 +296,23 @@ def main():
         x = x0.copy(); x[free] = xf; return residuals(x)
 
     r0 = residuals(x0)[:nres_obs].reshape(-1, 2)
-    sol = least_squares(res_free, x0[free], jac_sparsity=S.tocsr()[:, free], loss="soft_l1", f_scale=1.0,
+    if sift:
+        rs0 = np.linalg.norm(residuals(x0)[nres_pri:].reshape(-1, 2), axis=1) / a.sift_weight
+        print(f"SIFT initial reprojection median {np.median(rs0):.2f} px, p90 {np.percentile(rs0, 90):.2f} px")
+    lo = np.full(NP, -np.inf); hi = np.full(NP, np.inf)
+    lo[I_IN:I_SEG] = [-0.05, 0.95, -40, -40, -0.5, -0.5]; hi[I_IN:I_SEG] = [0.05, 1.05, 40, 40, 0.5, 0.5]
+    sol = least_squares(res_free, np.clip(x0[free], lo[free] + 1e-12, hi[free] - 1e-12), jac_sparsity=S.tocsr()[:, free],
+                        bounds=(lo[free], hi[free]), loss="soft_l1", f_scale=1.0,
                         x_scale="jac", method="trf", tr_solver="lsmr", max_nfev=100, verbose=0)
     x = x0.copy(); x[free] = sol.x
     rr = residuals(x)[:nres_obs].reshape(-1, 2); e = np.linalg.norm(rr, axis=1); e0 = np.linalg.norm(r0, axis=1)
     xv, (fx, fy, cx, cy, k), sg, dl, ls = unpack(x)
     # gauge: move everything so the reconstructed frame-tag corners fit the CAD rigidly (the from_markers definition of
     # the device frame, without its free scale: the tags set the scale here)
+    sift_px = None
+    if sift:   # before the gauge move below, which changes the poses in x but not the points
+        rs = residuals(x)[nres_pri:].reshape(-1, 2) / a.sift_weight; sift_px = float(np.median(np.linalg.norm(rs, axis=1)))
+        print(f"SIFT reprojection median {sift_px:.2f} px")
     gauge = (0.0, 0.0); Rf, tf = np.eye(3), np.zeros(3)
     if a.segments:
         ms = sorted(set(mi)); cad = np.array([model[m][1] for m in ms]); gi = np.array([SEGS.index(model[m][0]) for m in ms])
@@ -301,10 +325,6 @@ def main():
         xv[:, :3] = Rotation.from_matrix(Rv).as_rotvec(); xv[:, 3:] = xv[:, 3:] @ Rf.T + tf
         gauge = (float(np.degrees(np.linalg.norm(Rotation.from_matrix(Rf).as_rotvec()))), float(np.linalg.norm(tf)))
         print(f"gauge: frame corners -> CAD by {gauge[0]:.2f} deg, {gauge[1]:.2f} mm")
-    sift_px = None
-    if sift:
-        rs = residuals(x)[nres_pri:].reshape(-1, 2) / a.sift_weight; sift_px = float(np.median(np.linalg.norm(rs, axis=1)))
-        print(f"SIFT reprojection median {sift_px:.2f} px")
     dt = time.time() - t0
     per_view = np.full(nv, np.nan)
     for i in range(nv):
