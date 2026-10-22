@@ -19,6 +19,7 @@ DRIVE=${DRIVE:-gdrive:frame_capture/calibration_run/$CAP}
 # the box shows every host CPU (256) but has a ~61-core quota and a pids limit: cap AliceVision / OpenMP threads
 export AV_CORES=${AV_CORES:-48} OMP_NUM_THREADS=${OMP_NUM_THREADS:-48}
 mkdir -p "$W" /workspace/logs
+exec 9>"$W/.lock"; flock 9   # one invocation per capture at a time (parallel CPU jobs, orchestrators, fit waiter)
 has() { [[ ",$STAGES," == *",$1,"* ]]; }
 t() { echo "[$CAP] $1  $(date +%H:%M:%S)"; }
 
