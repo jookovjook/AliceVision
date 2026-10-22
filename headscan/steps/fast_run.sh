@@ -16,7 +16,7 @@ CAPS="6ba4b7d84f calibration_1 calibration_2 calibration_3"
 export DRIVE_ROOT=${DRIVE_ROOT:-gdrive:frame_capture/fast_pipeline_joint_fixedK}
 for c in $CAPS; do
   (eval "$(env_of $c)"; export SCALE CENTER HALF REF RULER; AV_CORES=14 OMP_NUM_THREADS=14 \
-    bash "$HS/steps/fast_capture.sh" $c frames,init,tags,poses,joint,export > $L/$c.fast_cpu.log 2>&1; echo "$c cpu exit $?") &
+    bash "$HS/steps/fast_capture.sh" $c frames,init,tags,poses${JOINT:+,joint},export > $L/$c.fast_cpu.log 2>&1; echo "$c cpu exit $?") &
 done
 wait
 for c in $CAPS; do

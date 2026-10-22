@@ -4,8 +4,9 @@
 # (tag_triangulate.py) -> GS export -> Stochastic Solids with the 30k schedule scaled to ITERS -> TSDF mesh ->
 # distance to the full-run mesh (REF) -> CAD fit + image fit -> essentials to Drive.
 #   bash headscan/steps/fast_capture.sh CAPTURE [STAGES]      CAPTURE = folder in /workspace/data (Stray Scanner)
-#   STAGES (default all): frames,init,tags,poses,joint,export,ss,compare,fit,upload
-#   joint = SIFT between neighbouring keyframes + joint bundle adjustment of tag corners and SIFT tracks (env SIFT_MAX
+#   STAGES (default): frames,init,tags,poses,export,ss,compare,fit,upload   (+ joint: optional, see below)
+#   joint (opt-in, not in the default stages: on the 3 table captures it moved the ear knobs by ~0.4 mm and did not
+#   improve the calibrated screw readouts, with free or fixed intrinsics) = SIFT between neighbouring keyframes + joint bundle adjustment of tag corners and SIFT tracks (env SIFT_MAX
 #   tracks, default 8000; SIFT_NEIGHBOURS frames, default 8; intrinsics stay fixed (ARKit) unless JOINT_INTRINSICS=1:
 #   freeing them moved the ear knobs by ~0.5 mm on the table captures)
 # Env: WIN (8), ITERS (7000), SCALE (1 head / 3 table: rasterizer near plane 0.2), CENTER/HALF (extraction cube, m),
@@ -13,7 +14,7 @@
 #      CALIB (calibration constants for apply_calibration.py; default data/calibration_constants_oct22.json).
 # Final output: readouts.json (calibrated screw gaps, knob K) next to the mesh and the fits.
 set -euo pipefail
-CAP=$1; STAGES=${2:-frames,init,tags,poses,joint,export,ss,compare,fit,upload}
+CAP=$1; STAGES=${2:-frames,init,tags,poses,export,ss,compare,fit,upload}
 HS=/workspace/AliceVision/headscan; PY=/workspace/hsvenv/bin/python
 CONDA=${CONDA:-/workspace/miniforge}; REPO=${REPO:-/workspace/src/gsss}
 D=/workspace/data/$CAP; W=/workspace/fast/$CAP
