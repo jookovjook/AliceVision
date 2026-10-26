@@ -86,3 +86,26 @@ Captures from the headscan iOS app: a TrueDepth face scan (no frame), then a hel
 4. Training data: cover wider heads and face poses.
 
 Data: `gdrive:frame_capture/app_scans_oct23/` (per capture: poses, mesh, fits, readouts; `analysis/`: eval.json, diag.json, landmarks, MRI fits, scripts).
+
+## Update Oct 26: Yoni's MRI
+
+![final](img/app_scans_final_oct26.png)
+
+Yoni's T1 was processed like Jack's:
+- **Targets:** the same SyN (MNI152NLin6Asym → subject) with warped atlas labels. These settings reproduce Jack's targets to 0.16 mm.
+- **Skin:** CHARM did not run on this Mac (a SimNIBS library failed to load). The skin is the T1 isosurface instead, calibrated on Jack against his CHARM skin: +0.71 mm on the rigid face areas, removed by a 0.71 mm inward offset.
+
+| | Jack | Yoni |
+|---|---|---|
+| Error vs own MRI, scans 1 / 2 / 3 | 4.21 / 2.50 / 1.40 mm | 4.12 / 2.32 / 2.88 mm |
+| Mean of the 3 predictions | 2.40 mm | 2.96 mm |
+| Scans within the model's p95 (4.96 mm) | 3 / 3 | 3 / 3 |
+| Spread between scans (mean / max pair) | 1.5 / 4.1 mm | 1.1 / 3.6 mm |
+| Face scan → own MRI skin, bony areas | 0.20–0.23 mm | 0.18–0.25 mm |
+| Worst target (mean of 3) | brainstem 4.6 mm | brainstem 5.2 mm |
+
+Caveats:
+- **yoni_2's MRI fit** had to start from yoni_3's.
+- **Face → frame placement:** yoni_2 and yoni_3 used the fallback, with less tight residuals.
+- **yoni_2's forehead screw tips** sit 5–12 mm off his MRI skin (hair, or a placement error). Treat yoni_2 with caution.
+- **Yoni's head width (150–155 mm) and frame pose** are at the edge of the training data.
